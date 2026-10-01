@@ -7,7 +7,7 @@ import { WELL_KNOWN } from 'roadmap-module-protocol'
 import { serves } from 'roadmap-module-protocol/serve'
 import { defineConfig, type Plugin } from 'vite'
 
-import { MANIFEST, TICKET, TICKET_HEADER, answer } from './doors.ts'
+import { MANIFEST, TICKET, TICKET_HEADER, answer, stream } from './doors.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
 import { page } from './page/document.ts'
 
@@ -60,6 +60,32 @@ function doors(): Plugin {
         const ours = path === '/healthz' || path === '/mcp' || path.startsWith('/api/')
         if (!ours) return next()
 
+        /* The two live doors: server-sent events, held open until the page goes. */
+        /* Events that arrive before the headers are sent (a talk's current state
+           is handed over at once) wait for them. */
+        const early: unknown[] = []
+        let opened = false
+        const event = (data: unknown) => response.write(`data: ${JSON.stringify(data)}\n\n`)
+        const live = stream(method, path, url.searchParams, (data) => (opened ? event(data) : early.push(data)))
+        if (live && 'reply' in live) return send(live.reply.status, live.reply.body)
+        if (live) {
+          response.statusCode = 200
+          response.setHeader('content-type', 'text/event-stream; charset=utf-8')
+          response.setHeader('cache-control', 'no-store')
+          response.setHeader('connection', 'keep-alive')
+          response.flushHeaders()
+          response.write(': open\n\n')
+          opened = true
+          early.splice(0).forEach(event)
+          /* A comment now and then, so nothing between here and the page decides the line is dead. */
+          const beat = setInterval(() => response.write(': beat\n\n'), 25_000)
+          request.on('close', () => {
+            clearInterval(beat)
+            live.close()
+          })
+          return
+        }
+
         void body(request)
           .then((parsed) => {
             const reply = answer(method, path, url.searchParams, parsed, readTicket(request.headers[TICKET_HEADER]))
@@ -78,11 +104,11 @@ function readTicket(value: string | string[] | undefined): string | null {
   return null
 }
 
-/** The POST body as a JSON object, or null. Bounded, because anything on this machine can find the port. */
+/** The body of a write as a JSON object, or null. Bounded, because anything on this machine can find the port. */
 const MAX_BODY_BYTES = 1_000_000
 
 async function body(request: IncomingMessage): Promise<Record<string, unknown> | null> {
-  if ((request.method ?? 'GET').toUpperCase() !== 'POST') return null
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes((request.method ?? 'GET').toUpperCase())) return null
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
