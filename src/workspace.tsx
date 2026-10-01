@@ -11,7 +11,7 @@ import type { Host } from '@/wire/use-roadmap'
 
 import type { WatchEvent } from '../deck/api.ts'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
-import { ExportPdfButton, FollowingToggle, OpenItYourself, PresentButtons } from './controls.tsx'
+import { HeaderControls, OpenItYourself } from './controls.tsx'
 import { linkedToReading, projectRelative, readingOf, type Reading } from './follow.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
@@ -43,6 +43,7 @@ export function Workspace({
   saveDelay,
   publishDelay,
   header,
+  onHistory,
   onState,
 }: {
   decks: Decks
@@ -57,6 +58,8 @@ export function Workspace({
   publishDelay?: number
   /** Where the header controls go; null draws none. */
   header: HTMLElement | null
+  /** The History control was pressed; the screen owns that dialog. */
+  onHistory(): void
   onState(state: SaveState): void
 }) {
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
@@ -124,18 +127,17 @@ export function Workspace({
   const controls = header
     ? createPortal(
         <>
-          <FollowingToggle
-            on={following}
+          <HeaderControls
+            following={following}
             presenting={show.presenting !== null}
             reading={reading}
             missing={followed.missing}
-            onToggle={() => setFollowing((on) => !on)}
-          />
-          <PresentButtons
+            onToggleFollowing={() => setFollowing((on) => !on)}
             onPresent={show.start}
             onPresenterView={() => open('The presenter view', './app', { presenter: slug })}
+            onExport={() => open('The print view', './print', { deck: slug })}
+            onHistory={onHistory}
           />
-          <ExportPdfButton onExport={() => open('The print view', './print', { deck: slug })} />
         </>,
         header,
       )

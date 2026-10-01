@@ -1,7 +1,14 @@
-import { Copy, FileDown, Link2, Link2Off, Play, Presentation, X } from 'lucide-react'
+import { Copy, FileDown, History, Link2, Link2Off, MoreHorizontal, Play, Presentation, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuCheck,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -25,6 +32,104 @@ export function followingLabel(on: boolean, presenting: boolean, missing: string
   return 'Following the paper'
 }
 
+const PRESENTER_HINT = 'Presenter view: notes, the next slide and a timer, in a window of its own.'
+const PDF_HINT = 'Export PDF: opens the print view, one slide per page.'
+
+/**
+ * The header's controls for the open deck. They respond to the header's own
+ * width (it is an `@container`), never the window's:
+ *
+ *  - always: Present (its label from 440px up);
+ *  - 400px and up: following, Presenter view, Export PDF and History as small
+ *    icon buttons (the following toggle spells itself out from 720px);
+ *  - below 400px: those four fold into one "More" menu.
+ */
+export function HeaderControls({
+  following,
+  presenting,
+  reading,
+  missing,
+  onToggleFollowing,
+  onPresent,
+  onPresenterView,
+  onExport,
+  onHistory,
+}: {
+  following: boolean
+  presenting: boolean
+  reading: Reading | null
+  missing: string | null
+  onToggleFollowing(): void
+  onPresent(): void
+  onPresenterView(): void
+  onExport(): void
+  onHistory(): void
+}) {
+  return (
+    <>
+      <Hint text="Present: full screen, from the slide on screen.">
+        <Button variant="ghost" size="sm" aria-label="Present" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={onPresent}>
+          <Play className="size-3.5" />
+          <span className="hidden @min-[440px]:inline">Present</span>
+        </Button>
+      </Hint>
+      <span data-testid="header-inline" className="hidden items-center gap-1 @min-[400px]:flex">
+        <FollowingToggle
+          on={following}
+          presenting={presenting}
+          reading={reading}
+          missing={missing}
+          onToggle={onToggleFollowing}
+        />
+        <Hint text={PRESENTER_HINT}>
+          <Button variant="ghost" size="icon" aria-label="Presenter view" className="size-7" onClick={onPresenterView}>
+            <Presentation className="size-3.5" />
+          </Button>
+        </Hint>
+        <Hint text={PDF_HINT}>
+          <Button variant="ghost" size="icon" aria-label="Export PDF" className="size-7" onClick={onExport}>
+            <FileDown className="size-3.5" />
+          </Button>
+        </Hint>
+        <Hint text="History: what agents changed in this deck, with Undo.">
+          <Button variant="ghost" size="icon" aria-label="History" className="size-7" onClick={onHistory}>
+            <History className="size-3.5" />
+          </Button>
+        </Hint>
+      </span>
+      <span data-testid="header-more" className="flex @min-[400px]:hidden">
+        <DropdownMenu>
+          <Hint text="More">
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="More actions" className="size-7">
+                <MoreHorizontal className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+          </Hint>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem role="menuitemcheckbox" aria-checked={following} onSelect={onToggleFollowing}>
+              <DropdownMenuCheck checked={following} />
+              <span className="min-w-0 flex-1 truncate">Follow the paper</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onPresenterView}>
+              <Presentation />
+              Presenter view
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onExport}>
+              <FileDown />
+              Export PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onHistory}>
+              <History />
+              History
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+    </>
+  )
+}
+
 export function FollowingToggle({
   on,
   presenting,
@@ -40,45 +145,20 @@ export function FollowingToggle({
 }) {
   const where = reading ? `The paper is on “${reading.title}”.` : 'The paper is not on a section.'
   const what = on ? 'Press to stop following it.' : 'Press to follow it again.'
+  const label = followingLabel(on, presenting, missing)
   return (
-    <Hint text={`${where} ${what}`}>
+    <Hint text={`${label}. ${where} ${what}`}>
       <Button
         variant="ghost"
         size="sm"
         aria-pressed={on}
+        aria-label={label}
         data-testid="following"
-        className={`h-7 gap-1 px-2 text-xs ${on ? '' : 'text-muted-foreground'}`}
+        className={`h-7 min-w-0 gap-1 px-2 text-xs ${on ? '' : 'text-muted-foreground'}`}
         onClick={onToggle}
       >
-        {on ? <Link2 className="size-3.5" /> : <Link2Off className="size-3.5" />}
-        <span className="max-w-44 truncate">{followingLabel(on, presenting, missing)}</span>
-      </Button>
-    </Hint>
-  )
-}
-
-export function PresentButtons({ onPresent, onPresenterView }: { onPresent(): void; onPresenterView(): void }) {
-  return (
-    <>
-      <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onPresent}>
-        <Play className="size-3.5" />
-        Present
-      </Button>
-      <Hint text="Presenter view: notes, the next slide and a timer, in a window of its own.">
-        <Button variant="ghost" size="icon" aria-label="Presenter view" className="size-7" onClick={onPresenterView}>
-          <Presentation className="size-3.5" />
-        </Button>
-      </Hint>
-    </>
-  )
-}
-
-export function ExportPdfButton({ onExport }: { onExport(): void }) {
-  return (
-    <Hint text="Export PDF: opens the print view, one slide per page.">
-      <Button variant="ghost" size="sm" aria-label="Export PDF" className="h-7 gap-1 px-2 text-xs" onClick={onExport}>
-        <FileDown className="size-3.5" />
-        PDF
+        {on ? <Link2 className="size-3.5 shrink-0" /> : <Link2Off className="size-3.5 shrink-0" />}
+        <span className="hidden max-w-44 truncate @min-[720px]:inline">{label}</span>
       </Button>
     </Hint>
   )
