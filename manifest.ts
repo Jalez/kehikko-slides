@@ -20,23 +20,31 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   id: ID,
   name: 'Slides',
   version: VERSION,
-  summary: 'What Slides is, in a sentence, for a person deciding whether to place it.',
+  summary: 'Presentation decks for a paper: Markdown slides that follow the paper as you read and present.',
   /* What this module's PRESENCE obliges an agent to do. Composed into every
      agent's prompt on the canvas, so write it to somebody who just arrived. */
   guidance:
-    'This canvas has Slides on it. Call `read_value` with the project path to see what it is holding.',
+    'This canvas has Slides on it: presentation decks kept as Markdown files in the project, at '
+    + '.kehikot/slides/<deck>.md. Slides linked to a paper section follow the paper as it is read, and turn the '
+    + 'paper when shown. `list_decks` and `read_deck` show what exists; read a deck before changing it. To draft a '
+    + 'talk, use the paper module’s `list_sections` and `read_paper`, then `create_deck` and `write_deck` with one or '
+    + 'more slides per section and speaker notes after a `Notes:` line, and `link_slide` each slide to its section. '
+    + '`edit_slide` changes one slide. Every write is kept in the deck’s history and the person can undo it, so give '
+    + 'a one-line `summary` and your name as `agent`. Do not edit the .md files directly while the person is editing.',
   entry: '/app',
   modes: [{ id: 'slides', label: 'Slides', scope: 'epic' }],
   mcp: {
     url: '/mcp',
     transport: 'http',
-    about: 'What an agent can do with Slides.',
+    about:
+      'Read, draft and edit presentation decks (Markdown slides) for a project, and link slides to paper sections. '
+      + 'Every write is recorded so the person can undo it.',
   },
   extensions: { emits: [], consumes: [] },
   reacts: [],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    uses: [],
+    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep'],
     /* True because this module keeps material and takes writes: the host then
        frames it on its real origin, so its scripts and `/api` calls are plain
        same-origin requests and nothing needs a permissive CORS header that
