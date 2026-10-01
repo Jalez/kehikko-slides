@@ -289,3 +289,29 @@ export function deckProblems(text: string): string[] {
   })
   return problems
 }
+
+/**
+ * Why a section cannot be written into a directive comment, or null when it
+ * can: `|` splits path from title, `;` splits directives, `-->` ends the
+ * comment. Refused rather than escaped, because the file is meant to be read.
+ */
+export function unlinkable(section: SectionLink): string | null {
+  for (const [what, value] of [['path', section.path], ['title', section.title]] as const) {
+    if (/[|;\n]|-->/.test(value)) return `The section ${what} "${value}" has | ; or --> in it, which a slide's directive comment cannot hold.`
+  }
+  return null
+}
+
+/**
+ * The text with slide `index` linked to `section` (or unlinked, for null),
+ * every other slide's bytes kept. Null for an index that is not a slide or a
+ * section that cannot be written (see `unlinkable`).
+ */
+export function setSection(text: string, index: number, section: SectionLink | null): string | null {
+  if (section && unlinkable(section)) return null
+  const normalised = text.replace(/\r\n/g, '\n')
+  const range = slideRanges(normalised)[index]
+  if (!range) return null
+  const slide = parseSlide(normalised.slice(range.from, range.to))
+  return replaceSlide(normalised, index, serialiseSlide({ ...slide, section }))
+}
