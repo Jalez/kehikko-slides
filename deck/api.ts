@@ -164,3 +164,16 @@ export interface PresentMove {
   index: number
   blank?: boolean
 }
+
+/*
+ * The names the page was written against. The page and the server were built
+ * side by side against one contract; these keep both spellings pointing at the
+ * one set of shapes above rather than at two that could drift.
+ */
+export type Version = string
+export type WatchEvent = DeckChange
+export type ListDecksReply = DecksReply
+export type ReadDeckReply = DeckReply
+export type WriteDeckReply = Saved
+export type ConflictReply = Conflict
+export type CreateDeckReply = Created

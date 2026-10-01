@@ -115,3 +115,233 @@
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
 }
+
+/*
+ * A slide's type, at its logical 1280×720 size (see `slides/slide-view.tsx`).
+ * Sizes are presentation sizes, in CSS pixels of the unscaled slide; colours
+ * are the module's tokens, so a slide follows light and dark like the rest.
+ */
+@layer components {
+  .slide-prose {
+    font-size: 34px;
+    line-height: 1.4;
+  }
+  .slide-prose > * + * {
+    margin-top: 0.6em;
+  }
+  .slide-prose h1 {
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .slide-prose h2 {
+    font-size: 54px;
+    font-weight: 650;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+  }
+  .slide-prose h3 {
+    font-size: 42px;
+    font-weight: 600;
+  }
+  .slide-prose h1 + *,
+  .slide-prose h2 + *,
+  .slide-prose h3 + * {
+    margin-top: 0.9em;
+  }
+  .slide-prose ul,
+  .slide-prose ol {
+    padding-left: 1.2em;
+  }
+  .slide-prose ul {
+    list-style: disc;
+  }
+  .slide-prose ol {
+    list-style: decimal;
+  }
+  .slide-prose li + li,
+  .slide-prose li > ul,
+  .slide-prose li > ol {
+    margin-top: 0.35em;
+  }
+  .slide-prose li > ul,
+  .slide-prose li > ol {
+    font-size: 0.85em;
+  }
+  .slide-prose li::marker {
+    color: var(--muted-foreground);
+  }
+  .slide-prose a {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  .slide-prose strong {
+    font-weight: 650;
+  }
+  .slide-prose code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+    background: var(--muted);
+    border-radius: 0.25em;
+    padding: 0.05em 0.3em;
+  }
+  .slide-prose pre {
+    background: var(--muted);
+    border-radius: 16px;
+    padding: 24px 28px;
+    font-size: 24px;
+    line-height: 1.45;
+    overflow: hidden;
+  }
+  .slide-prose pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .slide-prose blockquote {
+    border-left: 6px solid var(--border);
+    padding-left: 0.8em;
+    color: var(--muted-foreground);
+  }
+  .slide-prose table {
+    border-collapse: collapse;
+    font-size: 0.8em;
+  }
+  .slide-prose th,
+  .slide-prose td {
+    border-bottom: 2px solid var(--border);
+    padding: 0.3em 0.8em;
+    text-align: left;
+  }
+  .slide-prose th {
+    font-weight: 600;
+  }
+  .slide-prose img {
+    max-width: 100%;
+    max-height: 480px;
+    margin-inline: auto;
+  }
+  .slide-prose hr {
+    border-color: var(--border);
+  }
+
+  /* title: one big heading, the rest is the subtitle */
+  .slide-title h1,
+  .slide-title h2 {
+    font-size: 88px;
+    line-height: 1.05;
+  }
+  .slide-title p {
+    font-size: 40px;
+    color: var(--muted-foreground);
+  }
+
+  /* quote: the quotation large, its attribution small */
+  .slide-quote {
+    font-size: 36px;
+    color: var(--muted-foreground);
+  }
+  .slide-quote blockquote {
+    border: 0;
+    padding: 0;
+    font-size: 56px;
+    line-height: 1.25;
+    font-style: italic;
+    color: var(--foreground);
+  }
+  .slide-quote blockquote::before {
+    content: '“';
+    display: block;
+    height: 0.6em;
+    font-size: 2em;
+    line-height: 1;
+    color: var(--muted-foreground);
+  }
+
+  /* image: the picture takes what the heading and caption leave */
+  .slide-picture > img,
+  .slide-picture p {
+    display: contents;
+  }
+  .slide-picture img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 12px;
+  }
+  .slide-caption {
+    font-size: 26px;
+    color: var(--muted-foreground);
+  }
+
+  /* fenced code, highlighted by rehype-highlight (hljs class names) */
+  .slide-prose .hljs-comment,
+  .slide-prose .hljs-quote {
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+  .slide-prose .hljs-keyword,
+  .slide-prose .hljs-selector-tag,
+  .slide-prose .hljs-built_in,
+  .slide-prose .hljs-type {
+    color: oklch(0.55 0.17 290);
+  }
+  .slide-prose .hljs-string,
+  .slide-prose .hljs-attr,
+  .slide-prose .hljs-template-variable {
+    color: oklch(0.55 0.13 150);
+  }
+  .slide-prose .hljs-number,
+  .slide-prose .hljs-literal,
+  .slide-prose .hljs-symbol {
+    color: oklch(0.6 0.15 50);
+  }
+  .slide-prose .hljs-title,
+  .slide-prose .hljs-section,
+  .slide-prose .hljs-function {
+    color: oklch(0.55 0.15 250);
+  }
+  .dark .slide-prose .hljs-keyword,
+  .dark .slide-prose .hljs-selector-tag,
+  .dark .slide-prose .hljs-built_in,
+  .dark .slide-prose .hljs-type {
+    color: oklch(0.75 0.13 290);
+  }
+  .dark .slide-prose .hljs-string,
+  .dark .slide-prose .hljs-attr,
+  .dark .slide-prose .hljs-template-variable {
+    color: oklch(0.78 0.12 150);
+  }
+  .dark .slide-prose .hljs-number,
+  .dark .slide-prose .hljs-literal,
+  .dark .slide-prose .hljs-symbol {
+    color: oklch(0.8 0.12 60);
+  }
+  .dark .slide-prose .hljs-title,
+  .dark .slide-prose .hljs-section,
+  .dark .slide-prose .hljs-function {
+    color: oklch(0.78 0.11 250);
+  }
+
+  /* the editor: CodeMirror on the module's tokens */
+  .deck-editor .cm-editor {
+    height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 13px;
+  }
+  .deck-editor .cm-editor.cm-focused {
+    outline: none;
+  }
+  .deck-editor .cm-scroller {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 1.55;
+  }
+  .deck-editor .cm-content {
+    padding: 12px 0;
+  }
+  .deck-editor .cm-line {
+    padding: 0 14px;
+  }
+}
