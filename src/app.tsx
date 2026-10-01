@@ -17,21 +17,8 @@ export function App() {
 }
 
 /**
- * Controls a later step hangs in the header's right-hand slot, in this order
- * before History. Each is a node so the step that adds it owns its behaviour.
- */
-export interface HeaderSlots {
-  /** "Following the paper" — which section the deck is following, or "no slides for …". */
-  following?: ReactNode
-  /** Present: full screen of the slide stage. */
-  present?: ReactNode
-  /** Export PDF: the print view. */
-  exportPdf?: ReactNode
-}
-
-/**
- * The slides screen: a header strip (deck switcher, save state, the slots,
- * History) over the open deck's workspace. Rendered from a plain `Host` and a
+ * The slides screen: a header strip (deck switcher, save state, the open
+ * deck's controls — following the paper, Present, PDF — and History) over the open deck's workspace. Rendered from a plain `Host` and a
  * `Decks` client, so a test draws it with fakes (see test/screen.test.tsx).
  */
 export function Screen({
@@ -39,14 +26,14 @@ export function Screen({
   decks = realDecks,
   editor = DeckEditor,
   saveDelay = 600,
-  slots = {},
+  publishDelay,
 }: {
   host: Host
   decks?: Decks
   /** The Markdown editor; CodeMirror unless a test swaps it. */
   editor?: Editor
   saveDelay?: number
-  slots?: HeaderSlots
+  publishDelay?: number
 }) {
   const project = host.projectPath
   const [list, setList] = useState<DeckSummary[] | null>(null)
@@ -56,6 +43,8 @@ export function Screen({
   const [watched, setWatched] = useState<WatchEvent | null>(null)
   /* Bumped to remount the workspace with what is on disk (after an undo). */
   const [generation, setGeneration] = useState(0)
+  /* Where the workspace draws the open deck's controls (see Workspace). */
+  const [controls, setControls] = useState<HTMLSpanElement | null>(null)
 
   const refresh = useCallback(async () => {
     if (!project) return
@@ -135,9 +124,7 @@ export function Screen({
         ) : null}
         <div className="ml-auto flex items-center gap-1">
           {open && state ? <SaveWord state={state} /> : null}
-          {slots.following}
-          {slots.present}
-          {slots.exportPdf}
+          <span ref={setControls} className="contents" />
           {project && open ? (
             <HistoryButton
               decks={decks}
@@ -164,12 +151,15 @@ export function Screen({
           <Workspace
             key={`${open}:${generation}`}
             decks={decks}
+            host={host}
             project={project}
             slug={open}
             watched={watched}
             editor={editor}
             theme={host.theme}
             saveDelay={saveDelay}
+            publishDelay={publishDelay}
+            header={controls}
             onState={setState}
           />
         )}

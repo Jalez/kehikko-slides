@@ -5,6 +5,7 @@ import type {
   HistoryEntry,
   HistoryReply,
   ListDecksReply,
+  PresentState,
   ReadDeckReply,
   Version,
   WatchEvent,
@@ -42,6 +43,10 @@ export interface Decks {
   undo(project: string, slug: string, id: string): Promise<void>
   /** Calls `onChange` whenever a deck in the project changes on disk. Returns the unsubscribe. */
   watch(project: string, onChange: (event: WatchEvent) => void): () => void
+  /** Say where a talk is now, for every window following it. */
+  present(project: string, slug: string, index: number, blank: boolean): Promise<void>
+  /** Calls `onState` with where a talk is, at once and on every move. Returns the unsubscribe. */
+  followTalk(project: string, slug: string, onState: (state: PresentState) => void): () => void
 }
 
 async function body<T>(response: Response): Promise<T> {
@@ -105,6 +110,22 @@ export const decks: Decks = {
       try {
         const event = JSON.parse(String(message.data)) as WatchEvent
         if (event && typeof event.slug === 'string') onChange(event)
+      } catch {
+        /* a keep-alive or a line we do not read */
+      }
+    }
+    return () => source.close()
+  },
+  async present(project, slug, index, blank) {
+    await body(await send('POST', './api/present', { project, slug, index, blank }))
+  },
+  followTalk(project, slug, onState) {
+    if (typeof EventSource === 'undefined') return () => {}
+    const source = new EventSource(`./api/present?${query({ project, slug })}`)
+    source.onmessage = (message) => {
+      try {
+        const state = JSON.parse(String(message.data)) as PresentState
+        if (state && typeof state.index === 'number') onState(state)
       } catch {
         /* a keep-alive or a line we do not read */
       }

@@ -25,6 +25,7 @@ export function SlideView({
   aspect = '16:9',
   fit = 'contain',
   showSection = false,
+  onUnlink,
   className,
 }: {
   slide: Slide
@@ -37,6 +38,8 @@ export function SlideView({
   fit?: 'contain' | 'width'
   /** The small section chip: the editor's preview shows it, presented output does not. */
   showSection?: boolean
+  /** Given, the section chip carries an × that unlinks the slide. */
+  onUnlink?: () => void
   className?: string
 }) {
   const box = useRef<HTMLDivElement>(null)
@@ -63,7 +66,7 @@ export function SlideView({
         className="absolute origin-top-left"
         style={{ width, height: SLIDE_HEIGHT, left, top, transform: `scale(${scale})` }}
       >
-        <SlideFace slide={slide} showSection={showSection} />
+        <SlideFace slide={slide} showSection={showSection} onUnlink={onUnlink} />
       </div>
     </div>
   )
@@ -94,7 +97,15 @@ function useSize(ref: React.RefObject<HTMLElement | null>): { width: number; hei
  * own tokens, so light and dark follow the host's theme. Speaker notes are not
  * part of a slide's face and are never drawn here.
  */
-export const SlideFace = memo(function SlideFace({ slide, showSection = false }: { slide: Slide; showSection?: boolean }) {
+export const SlideFace = memo(function SlideFace({
+  slide,
+  showSection = false,
+  onUnlink,
+}: {
+  slide: Slide
+  showSection?: boolean
+  onUnlink?: () => void
+}) {
   return (
     <div
       data-layout={slide.layout}
@@ -105,9 +116,21 @@ export const SlideFace = memo(function SlideFace({ slide, showSection = false }:
         <span
           data-testid="section-chip"
           title={`${slide.section.path} — ${slide.section.title}`}
-          className="bg-muted text-muted-foreground absolute top-6 right-6 max-w-[40%] truncate rounded-full px-4 py-1.5 text-[20px]"
+          className="bg-muted text-muted-foreground absolute top-6 right-6 flex max-w-[40%] items-center gap-2 rounded-full px-4 py-1.5 text-[20px]"
         >
-          § {slide.section.title}
+          <span className="truncate">§ {slide.section.title}</span>
+          {onUnlink ? (
+            /* Drawn at slide scale like the chip, so it is large in logical pixels to stay pressable when shrunk. */
+            <button
+              type="button"
+              aria-label={`unlink from ${slide.section.title}`}
+              title="Unlink this slide from the section"
+              onClick={onUnlink}
+              className="hover:text-foreground -mr-2 shrink-0 rounded-full px-2 text-[28px] leading-none"
+            >
+              ×
+            </button>
+          ) : null}
         </span>
       ) : null}
     </div>

@@ -8,12 +8,24 @@ import './index.css'
    greeting that arrives early is held rather than lost. */
 import 'roadmap-module-protocol/client'
 import { App } from './app.tsx'
+import { PresenterView } from './presenter.tsx'
+import { PrintView } from './print.tsx'
+import { applyTheme, routeOf } from './routes.ts'
+
+const route = routeOf(location.href)
+if (route.page !== 'screen') applyTheme(route.theme)
 
 const root = document.getElementById('root')
 if (root) {
   createRoot(root).render(
     <StrictMode>
-      <App />
+      {route.page === 'presenter' ? (
+        <PresenterView project={route.project} slug={route.slug} />
+      ) : route.page === 'print' ? (
+        <PrintView project={route.project} slug={route.slug} />
+      ) : (
+        <App />
+      )}
     </StrictMode>,
   )
 }
