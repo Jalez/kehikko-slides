@@ -229,3 +229,63 @@ export function slugFor(title: string): string {
 export function linkedTo(slide: Slide, path: string, title: string): boolean {
   return slide.section !== null && slide.section.path === path && slide.section.title === title
 }
+
+/**
+ * The text with its front-matter `title` set, and nothing else touched: a
+ * rename should not reflow a person's slides. A file with no front matter is
+ * given one.
+ */
+export function retitle(text: string, title: string): string {
+  const clean = title.replace(/\s+/g, ' ').trim()
+  const normalised = text.replace(/\r\n/g, '\n')
+  const { offset } = frontMatter(normalised)
+  if (offset === 0) return `---\ntitle: ${clean}\n---\n\n${normalised.replace(/^\s*\n/, '')}`
+  const lines = normalised.slice(0, offset).split('\n')
+  const end = lines.findIndex((line, i) => i > 0 && SEPARATOR.test(line))
+  const at = lines.findIndex((line, i) => i > 0 && i < end && /^title[ \t]*:/i.test(line))
+  if (at > 0) lines[at] = `title: ${clean}`
+  else lines.splice(1, 0, `title: ${clean}`)
+  return lines.join('\n') + normalised.slice(offset)
+}
+
+/**
+ * The text with slide `index` replaced by `slide` (one slide's Markdown,
+ * directive comment and notes included), every other byte kept as it was.
+ * The blank lines around the old slide are kept around the new one. Returns
+ * null for an index that is not a slide.
+ */
+export function replaceSlide(text: string, index: number, slide: string): string | null {
+  const normalised = text.replace(/\r\n/g, '\n')
+  const ranges = slideRanges(normalised)
+  const range = ranges[index]
+  if (!Number.isInteger(index) || !range) return null
+  const old = normalised.slice(range.from, range.to)
+  const last = index === ranges.length - 1
+  const blank = old.trim() === ''
+  const lead = blank ? (range.from === 0 ? '' : '\n') : (/^\s*/.exec(old)?.[0] ?? '')
+  const trail = blank ? (last ? '\n' : '\n\n') : (/\s*$/.exec(old)?.[0] ?? '')
+  return normalised.slice(0, range.from) + lead + slide.trim() + trail + normalised.slice(range.to)
+}
+
+/** A slide's heading, or its first line, for a list of slides. */
+export function slideHeadline(slide: Slide): string {
+  const first = slide.body.split('\n').find((line) => line.trim()) ?? ''
+  return first.replace(/^#+\s*/, '').trim()
+}
+
+/**
+ * What is wrong with a deck's directives, one sentence per slide, counted from
+ * 0. A `layout` or `section` the parser could not read is kept as an unknown
+ * directive, which is right for a person's file and wrong for an agent's write:
+ * the agent meant something and would never learn it did not land.
+ */
+export function deckProblems(text: string): string[] {
+  const problems: string[] = []
+  parseDeck(text).slides.forEach((slide, i) => {
+    for (const [key, value] of slide.extra) {
+      if (key === 'layout') problems.push(`Slide ${i}: layout "${value}" is not one of ${LAYOUTS.join(', ')}.`)
+      if (key === 'section') problems.push(`Slide ${i}: section "${value}" is not "<project-relative path> | <heading title>".`)
+    }
+  })
+  return problems
+}
