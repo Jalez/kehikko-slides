@@ -1,15 +1,23 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, Link2 } from 'lucide-react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { Button } from '@/components/ui/button'
 import type { Editor } from '@/editor/deck-editor'
 import { cn } from '@/lib/utils'
 import { SlideView } from '@/slides/slide-view'
 import type { Decks } from '@/wire/decks'
+import type { Host } from '@/wire/use-roadmap'
 
 import type { WatchEvent } from '../deck/api.ts'
-import { parseDeck, slideAt, slideRanges, type Deck } from '../deck/format.ts'
+import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
+import { ExportPdfButton, FollowingToggle, OpenItYourself, PresentButtons } from './controls.tsx'
+import { linkedToReading, projectRelative, readingOf, type Reading } from './follow.ts'
+import { openPage, pageUrl } from './open-window.ts'
+import { Stage, usePresenting } from './stage.tsx'
+import { useTalk } from './talk.ts'
 import { useDeck, type SaveState } from './use-deck.ts'
+import { useFollowing } from './use-following.ts'
 
 /**
  * The open deck: thumbnails, the Markdown, and the current slide.
@@ -19,24 +27,36 @@ import { useDeck, type SaveState } from './use-deck.ts'
  * editor to follow). Wide, the three panes sit side by side; in a container
  * narrower than 720px they collapse to Edit / Preview tabs. That switch is a
  * container query, so the frame's own width decides, not the window's.
+ *
+ * The deck's header controls (following, present, PDF) are drawn into the
+ * screen's header through a portal at `header`: they act on the slide on
+ * screen, and that lives here.
  */
 export function Workspace({
   decks,
+  host,
   project,
   slug,
   watched,
   editor: EditorPane,
   theme,
   saveDelay,
+  publishDelay,
+  header,
   onState,
 }: {
   decks: Decks
+  host: Host
   project: string
   slug: string
   watched: WatchEvent | null
   editor: Editor
   theme: 'light' | 'dark'
   saveDelay?: number
+  /** How long a move waits before the paper is turned; tests shorten it. */
+  publishDelay?: number
+  /** Where the header controls go; null draws none. */
+  header: HTMLElement | null
   onState(state: SaveState): void
 }) {
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
@@ -62,6 +82,65 @@ export function Workspace({
     setJump((was) => ({ at, nonce: (was?.nonce ?? 0) + 1 }))
   }
 
+  const stage = useRef<HTMLDivElement>(null)
+  const show = usePresenting({ stage, index: current, count: deck.slides.length, goTo })
+  const [following, setFollowing] = useState(true)
+  const followed = useFollowing({
+    host,
+    project,
+    slides: deck.slides,
+    current,
+    ready: doc.text !== null,
+    enabled: following,
+    presenting: show.presenting !== null,
+    goTo,
+    publishDelay,
+  })
+  useTalk({
+    decks,
+    project,
+    slug,
+    active: show.presenting !== null,
+    index: current,
+    blank: show.blank,
+    since: show.since,
+    onMove: (to) => {
+      if (to.index !== current) goTo(to.index)
+      show.setBlank(to.blank)
+    },
+  })
+  const [blocked, setBlocked] = useState<{ what: string; url: string } | null>(null)
+  const open = (what: string, path: string, params: Record<string, string>) => {
+    const url = pageUrl(path, { ...params, project, theme })
+    setBlocked(openPage(url) ? null : { what, url })
+  }
+
+  const reading = readingOf(host.passage)
+  const edit = (section: SectionLink | null) => {
+    const next = setSection(text, current, section)
+    if (next !== null && next !== text) doc.edit(next)
+  }
+
+  const controls = header
+    ? createPortal(
+        <>
+          <FollowingToggle
+            on={following}
+            presenting={show.presenting !== null}
+            reading={reading}
+            missing={followed.missing}
+            onToggle={() => setFollowing((on) => !on)}
+          />
+          <PresentButtons
+            onPresent={show.start}
+            onPresenterView={() => open('The presenter view', './app', { presenter: slug })}
+          />
+          <ExportPdfButton onExport={() => open('The print view', './print', { deck: slug })} />
+        </>,
+        header,
+      )
+    : null
+
   if (doc.text === null) {
     return (
       <p className="text-muted-foreground m-auto p-6 text-xs">
@@ -72,6 +151,16 @@ export function Workspace({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {controls}
+      <Stage
+        stage={stage}
+        presenting={show.presenting}
+        slide={slide}
+        aspect={deck.aspect}
+        blank={show.blank}
+        note={show.note}
+      />
+      {blocked ? <OpenItYourself what={blocked.what} url={blocked.url} onDismiss={() => setBlocked(null)} /> : null}
       {doc.notice ? (
         <div role="status" className="bg-muted/60 flex flex-wrap items-center gap-2 border-b px-3 py-1 text-xs">
           <span className="min-w-0 flex-1">
@@ -148,7 +237,18 @@ export function Workspace({
           )}
         >
           <div className="min-h-0 flex-1 p-4">
-            {slide ? <SlideView slide={slide} aspect={deck.aspect} showSection className="drop-shadow-sm" /> : null}
+            {slide ? (
+              <SlideView
+                slide={slide}
+                aspect={deck.aspect}
+                showSection
+                onUnlink={() => edit(null)}
+                className="drop-shadow-sm"
+              />
+            ) : null}
+          </div>
+          <div className="flex justify-center px-3 pb-1">
+            <LinkButton project={project} reading={reading} slide={slide} onLink={edit} />
           </div>
           <div className="text-muted-foreground flex items-center justify-center gap-1 pb-2 text-[11px] tabular-nums">
             <Button
@@ -178,6 +278,44 @@ export function Workspace({
         </section>
       </div>
     </div>
+  )
+}
+
+/**
+ * Link the slide on screen to the section the paper is on. The directive is
+ * written into the text the editor holds, so the person sees it appear and it
+ * is saved like any other edit.
+ */
+function LinkButton({
+  project,
+  reading,
+  slide,
+  onLink,
+}: {
+  project: string
+  reading: Reading | null
+  slide: Deck['slides'][number] | undefined
+  onLink(section: SectionLink): void
+}) {
+  const path = reading ? projectRelative(project, reading.path) : null
+  const section = reading && path ? { path, title: reading.title } : null
+  const why = !reading
+    ? 'The paper is not on a section.'
+    : !section
+      ? 'The paper’s file is not inside this project.'
+      : unlinkable(section) ?? (linkedToReading(slide, project, reading) ? 'This slide is already linked to it.' : null)
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-muted-foreground h-6 gap-1 px-2 text-[11px]"
+      disabled={why !== null}
+      title={why ?? `Link this slide to “${reading?.title}”`}
+      onClick={() => section && onLink(section)}
+    >
+      <Link2 className="size-3" />
+      Link to the section you're reading
+    </Button>
   )
 }
 
