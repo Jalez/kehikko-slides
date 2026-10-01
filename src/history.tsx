@@ -1,8 +1,7 @@
-import { History } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { Decks } from '@/wire/decks'
 
 import type { HistoryEntry } from '../deck/api.ts'
@@ -12,19 +11,22 @@ import type { HistoryEntry } from '../deck/api.ts'
  * newest first, each with Undo — which puts back the text from before that
  * write. A person's own edits are not here; the editor's undo is for those.
  */
-export function HistoryButton({
+export function HistoryDialog({
+  open,
+  onOpenChange,
   decks,
   project,
   slug,
   onUndone,
 }: {
+  open: boolean
+  onOpenChange(open: boolean): void
   decks: Decks
   project: string
   slug: string
   /** An undo was written: the open deck should be read again. */
   onUndone(): void
 }) {
-  const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -58,13 +60,7 @@ export function HistoryButton({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
-          <History className="size-3.5" />
-          History
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80cqh] max-w-md grid-rows-[auto_1fr] gap-3 p-4">
         <DialogHeader>
           <DialogTitle className="text-sm">Agent edits</DialogTitle>

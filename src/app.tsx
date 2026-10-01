@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Hint } from '@/controls'
 import { DeckEditor, type Editor } from '@/editor/deck-editor'
-import { HistoryButton } from '@/history'
+import { HistoryDialog } from '@/history'
 import { Switcher, type Item } from '@/switcher'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 import { useRoadmap, type Host } from '@/wire/use-roadmap'
@@ -44,6 +45,7 @@ export function Screen({
   /* Bumped to remount the workspace with what is on disk (after an undo). */
   const [generation, setGeneration] = useState(0)
   /* Where the workspace draws the open deck's controls (see Workspace). */
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [controls, setControls] = useState<HTMLSpanElement | null>(null)
 
   const refresh = useCallback(async () => {
@@ -95,8 +97,8 @@ export function Screen({
 
   return (
     <div className="flex h-screen flex-col text-sm">
-      <header className="flex min-h-9 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b px-2 py-1">
-        <span className="text-xs font-medium">Slides</span>
+      <header className="@container flex min-h-9 shrink-0 flex-nowrap items-center gap-x-2 border-b px-2 py-1">
+        <span className="shrink-0 text-xs font-medium">Slides</span>
         {project && list ? (
           <Switcher
             noun="deck"
@@ -122,19 +124,21 @@ export function Screen({
             onCreate={create}
           />
         ) : null}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {open && state ? <SaveWord state={state} /> : null}
           <span ref={setControls} className="contents" />
-          {project && open ? (
-            <HistoryButton
-              decks={decks}
-              project={project}
-              slug={open}
-              onUndone={() => setGeneration((n) => n + 1)}
-            />
-          ) : null}
         </div>
       </header>
+      {project && open ? (
+        <HistoryDialog
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          decks={decks}
+          project={project}
+          slug={open}
+          onUndone={() => setGeneration((n) => n + 1)}
+        />
+      ) : null}
       {failed ? (
         <p role="alert" className="text-destructive border-b px-3 py-1 text-xs">
           {failed}
@@ -160,6 +164,7 @@ export function Screen({
             saveDelay={saveDelay}
             publishDelay={publishDelay}
             header={controls}
+            onHistory={() => setHistoryOpen(true)}
             onState={setState}
           />
         )}
@@ -189,13 +194,24 @@ const WORDS: Record<SaveState, string> = {
 }
 
 function SaveWord({ state }: { state: SaveState }) {
+  const bad = state === 'conflict' || state === 'failed'
   return (
-    <span
-      data-testid="save-state"
-      className={`px-1 text-[11px] ${state === 'conflict' || state === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}
-    >
-      {WORDS[state]}
-    </span>
+    <>
+      {/* Narrow: a dot with the word as its tooltip; wide: the word itself. */}
+      <Hint text={WORDS[state]}>
+        <span
+          role="img"
+          aria-label={WORDS[state]}
+          className={`mx-1 size-2 shrink-0 rounded-full @min-[520px]:hidden ${bad ? 'bg-destructive' : state === 'saved' ? 'bg-muted-foreground/50' : 'bg-foreground/70'}`}
+        />
+      </Hint>
+      <span
+        data-testid="save-state"
+        className={`hidden px-1 text-[11px] @min-[520px]:inline ${bad ? 'text-destructive' : 'text-muted-foreground'}`}
+      >
+        {WORDS[state]}
+      </span>
+    </>
   )
 }
 

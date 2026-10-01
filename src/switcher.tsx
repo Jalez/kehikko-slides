@@ -57,7 +57,7 @@ export function Switcher({
       }}
     >
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 min-w-0 gap-1 px-2 text-xs">
+        <Button variant="ghost" size="sm" className="h-7 min-w-0 max-w-full shrink gap-1 px-2 text-xs">
           <span className="truncate">{open ? open.name : `no ${noun}`}</span>
           <ChevronDown className="size-3 shrink-0 opacity-60" />
         </Button>

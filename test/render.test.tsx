@@ -184,3 +184,64 @@ describe('history', () => {
     await waitFor(() => expect(fake.of('undo')[0]?.args).toEqual(['/work/thesis', 'defence', 'h1']))
   })
 })
+
+describe('header', () => {
+  const NAMES = ['Present', 'Presenter view', 'Export PDF', 'History']
+
+  test('is one non-wrapping row, a container the controls respond to', async () => {
+    draw(fakeDecks())
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    const header = document.querySelector('header')!
+    expect(header.className).toContain('@container')
+    expect(header.className).toContain('flex-nowrap')
+    expect(header.className).not.toContain('flex-wrap')
+  })
+
+  test('every action is an icon button with an accessible name', async () => {
+    draw(fakeDecks())
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    const inline = screen.getByTestId('header-inline')
+    for (const name of NAMES.slice(1)) {
+      const button = inline.querySelector(`button[aria-label="${name}"]`)
+      expect(button).not.toBeNull()
+      expect(button?.textContent).toBe('')
+    }
+    expect(screen.getByRole('button', { name: 'Present' })).toBeDefined()
+    expect(screen.getByTestId('following').getAttribute('aria-label')).toBe('Following the paper')
+  })
+
+  test('the narrow save state is a dot with the word as its name', async () => {
+    draw(fakeDecks())
+    await waitFor(() => expect(screen.getByTestId('save-state').textContent).toBe('saved'))
+    expect(screen.getByRole('img', { name: 'saved' })).toBeDefined()
+  })
+
+  test('narrow, the More menu holds following, Presenter view, Export PDF and History', async () => {
+    const fake = fakeDecks(
+      {},
+      { history: [{ id: 'h1', slug: 'defence', at: '2026-10-01T10:00:00Z', agent: 'claude', summary: 'add results slide' }] },
+    )
+    draw(fake)
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    const more = screen.getByRole('button', { name: 'More actions' })
+    expect(screen.getByTestId('header-more').className).toContain('@min-[400px]:hidden')
+    expect(screen.getByTestId('header-inline').className).toContain('@min-[400px]:flex')
+
+    fireEvent.keyDown(more, { key: 'Enter' })
+    const follow = await screen.findByRole('menuitemcheckbox', { name: 'Follow the paper' })
+    expect(follow.getAttribute('aria-checked')).toBe('true')
+    for (const name of NAMES.slice(1)) expect(screen.getByRole('menuitem', { name })).toBeDefined()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'History' }))
+    expect(await screen.findByText('add results slide')).toBeDefined()
+  })
+
+  test('the following item in the More menu toggles the same state as the button', async () => {
+    draw(fakeDecks())
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    const more = screen.getByRole('button', { name: 'More actions' })
+    fireEvent.keyDown(more, { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Follow the paper' }))
+    await waitFor(() => expect(screen.getByTestId('following').getAttribute('aria-pressed')).toBe('false'))
+  })
+})
