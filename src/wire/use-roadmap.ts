@@ -2,6 +2,8 @@ import { useEffect, useMemo } from 'react'
 
 import { useRoadmap as useProtocolRoadmap, type Roadmap, type Where } from 'roadmap-module-protocol/client/react'
 
+import type { PassageLike } from '../follow.ts'
+
 import { ID } from '../../manifest.ts'
 
 /**
@@ -19,6 +21,12 @@ export interface Host {
   projectPath: string | null
   epic: string | null
   theme: 'light' | 'dark'
+  /**
+   * Where a reader on the canvas is pointing: an ABSOLUTE path, and the
+   * section being read (`section`) when a paper publishes one. Null when
+   * nobody is pointing anywhere.
+   */
+  passage: PassageLike | null
   /** Ask the host for something (a method from the protocol). Rejects when unhosted. */
   request: Roadmap['request']
 }
@@ -42,6 +50,7 @@ export function useRoadmap(): Host {
       projectPath: context?.projectPath ?? null,
       epic: context?.epic ?? null,
       theme,
+      passage: context?.passage ?? null,
       request: roadmap.request,
     }),
     [roadmap.where, roadmap.request, context, theme],

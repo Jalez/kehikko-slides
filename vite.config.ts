@@ -38,7 +38,8 @@ function doors(): Plugin {
 
         if (path === WELL_KNOWN) return send(200, MANIFEST)
 
-        if (path === '/app' || path === '/app/' || path === '/') {
+        /* `/print` is the same page; it reads its address and draws the print view. */
+        if (path === '/app' || path === '/app/' || path === '/' || path === '/print') {
           void server
             .transformIndexHtml(request.url ?? '/app', page(TICKET), request.originalUrl)
             .then((html) => {
