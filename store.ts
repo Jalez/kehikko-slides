@@ -15,6 +15,7 @@ import { isAbsolute, join } from 'node:path'
 import { kehikotDir, moduleDir, within } from 'roadmap-module-protocol'
 
 import { HISTORY_PER_DECK, MAX_DECK_CHARS, SLUG, type DeckFile, type DeckSummary, type HistoryEntry } from './deck/api.ts'
+import { resolveSource, type Resolved } from './deck/cite.ts'
 import { emptySlide, parseDeck, retitle, serialiseDeck, slugFor } from './deck/format.ts'
 import { ID } from './manifest.ts'
 
@@ -190,6 +191,64 @@ function removeDeck(project: string | null | undefined, slug: string): Result<nu
   if (!existsSync(file.value)) return missing(slug)
   rmSync(file.value)
   return { ok: true, value: null }
+}
+
+/* ------------------------------------------------------------------ *
+ * Citations
+ * ------------------------------------------------------------------ */
+
+/** The largest file a citation is looked for in. A paper's chapter is far smaller. */
+const MAX_CITED_BYTES = 5_000_000
+
+/**
+ * A project file's text, for finding a quote in, or null when it cannot be
+ * read: missing, not a file, too large, or resolving outside the project. The
+ * path is a deck's, so it is a stranger's string: confined like a deck file.
+ */
+export function citedText(root: string, path: string): string | null {
+  if (!path || isAbsolute(path) || path.replace(/\\/g, '/').split('/').includes('..')) return null
+  const file = join(root, path)
+  try {
+    if (escapes(root, file)) return null
+    const stat = statSync(file)
+    if (!stat.isFile() || stat.size > MAX_CITED_BYTES) return null
+    return readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/** The largest passage a selection can be cited from, in bytes. */
+export const MAX_CITED_SLICE = 4000
+
+/**
+ * The exact words between two byte offsets of a project file: what a reader
+ * selected in the paper, as the source has it rather than as it was drawn.
+ */
+export function citedSlice(project: string | null | undefined, path: string, from: number, to: number): Result<string> {
+  const root = projectRoot(project)
+  if (!root.ok) return root
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from) return { ok: false, error: 'from and to are byte offsets, to after from.' }
+  if (to - from > MAX_CITED_SLICE) return { ok: false, error: `That selection is longer than ${MAX_CITED_SLICE} bytes; cite a sentence or two.` }
+  const text = citedText(root.value, path)
+  if (text === null) return { ok: false, status: 404, error: `"${path.slice(0, 200)}" is not a readable file inside this project.` }
+  const all = Buffer.from(text, 'utf8')
+  if (to > all.length) return { ok: false, error: 'That range runs past the end of the file; the paper may have changed since it was selected.' }
+  return { ok: true, value: all.subarray(from, to).toString('utf8') }
+}
+
+/** Every slide's sources, each looked for in its file. Indexed like the slides. */
+export function citations(project: string | null | undefined, slug: string): Result<Resolved[][]> {
+  const root = projectRoot(project)
+  if (!root.ok) return root
+  const deck = readDeck(root.value, slug)
+  if (!deck.ok) return deck
+  const files = new Map<string, string | null>()
+  const textOf = (path: string) => {
+    if (!files.has(path)) files.set(path, citedText(root.value, path))
+    return files.get(path) ?? null
+  }
+  return { ok: true, value: parseDeck(deck.value.text, slug).slides.map((slide) => slide.sources.map((one) => resolveSource(one, textOf(one.path)))) }
 }
 
 /* ------------------------------------------------------------------ *

@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, Link2 } from 'lucide-react'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Button } from '@/components/ui/button'
@@ -9,10 +9,12 @@ import { SlideView } from '@/slides/slide-view'
 import type { Decks } from '@/wire/decks'
 import type { Host } from '@/wire/use-roadmap'
 
-import type { WatchEvent } from '../deck/api.ts'
+import type { CitationView, WatchEvent } from '../deck/api.ts'
+import { addCitation } from '../deck/cite.ts'
+import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
-import { linkedToReading, projectRelative, readingOf, type Reading } from './follow.ts'
+import { absolute, linkedToReading, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
 import { useTalk } from './talk.ts'
@@ -116,6 +118,40 @@ export function Workspace({
   const open = (what: string, path: string, params: Record<string, string>) => {
     const url = pageUrl(path, { ...params, project, theme })
     setBlocked(openPage(url) ? null : { what, url })
+  }
+
+  const cited = useCitations(decks, project, slug, doc.state, watched)
+  const selection = selectedRange(host.passage)
+  const cite = useMemo<Cite>(() => {
+    const found = new Map((cited?.[current] ?? []).map((one) => [one.label, one] as const))
+    const lit = new Set(
+      [...found.values()]
+        .filter((one) => selection && one.at && samePath(absolute(project, one.path), selection.path) && one.at.from < selection.to && selection.from < one.at.to)
+        .map((one) => one.label),
+    )
+    return {
+      found,
+      lit,
+      onCite: (label) => {
+        const one = found.get(label)
+        if (!one?.at) return
+        followed.point({ path: absolute(project, one.path), page: null, from: one.at.from, to: one.at.to, quoted: one.quote.slice(0, 2000), section: null })
+      },
+    }
+  }, [cited, current, project, selection?.path, selection?.from, selection?.to])
+  const [citeTrouble, setCiteTrouble] = useState<string | null>(null)
+  const citeSelection = async () => {
+    const rel = selection ? projectRelative(project, selection.path) : null
+    if (!selection || !rel) return
+    try {
+      const quote = await decks.source(project, rel, selection.from, selection.to)
+      const done = addCitation(text, current, { path: rel, quote }, { caret })
+      if ('error' in done) return setCiteTrouble(done.error)
+      setCiteTrouble(null)
+      doc.edit(done.text)
+    } catch (e) {
+      setCiteTrouble(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const reading = readingOf(host.passage)
@@ -245,13 +281,20 @@ export function Workspace({
                 aspect={deck.aspect}
                 showSection
                 onUnlink={() => edit(null)}
+                cite={cite}
                 className="drop-shadow-sm"
               />
             ) : null}
           </div>
           <div className="flex justify-center px-3 pb-1">
             <LinkButton project={project} reading={reading} slide={slide} onLink={edit} />
+            <CiteButton project={project} selection={selection} already={cite.lit.size > 0} onCite={() => void citeSelection()} />
           </div>
+          {citeTrouble ? (
+            <p role="status" className="text-destructive px-3 pb-1 text-center text-[11px]">
+              {citeTrouble}
+            </p>
+          ) : null}
           <div className="text-muted-foreground flex items-center justify-center gap-1 pb-2 text-[11px] tabular-nums">
             <Button
               variant="ghost"
@@ -317,6 +360,66 @@ function LinkButton({
     >
       <Link2 className="size-3" />
       Link to the section you're reading
+    </Button>
+  )
+}
+
+/** What is selected in the paper, when a range of a file is. */
+function selectedRange(passage: PassageLike | null | undefined): { path: string; from: number; to: number } | null {
+  if (!passage || typeof passage.from !== 'number' || typeof passage.to !== 'number' || passage.to <= passage.from) return null
+  return { path: passage.path, from: passage.from, to: passage.to }
+}
+
+/** How often the citations are looked for again while a deck is open: the paper can change under it. */
+const CITATIONS_EVERY_MS = 15_000
+
+/** The open deck's citations as the store finds them, read again on each save, each change on disk, and now and then. */
+function useCitations(decks: Decks, project: string, slug: string, state: SaveState, watched: WatchEvent | null): CitationView[][] | null {
+  const [found, setFound] = useState<CitationView[][] | null>(null)
+  const look = useCallback(() => {
+    decks.citations(project, slug).then(setFound, () => {
+      /* An older store without the door, or none at all: the markers are drawn unchecked. */
+    })
+  }, [decks, project, slug])
+  useEffect(() => {
+    if (state === 'saved') look()
+  }, [state, watched, look])
+  useEffect(() => {
+    const timer = setInterval(look, CITATIONS_EVERY_MS)
+    return () => clearInterval(timer)
+  }, [look])
+  return found
+}
+
+function CiteButton({
+  project,
+  selection,
+  already,
+  onCite,
+}: {
+  project: string
+  selection: { path: string; from: number; to: number } | null
+  already: boolean
+  onCite(): void
+}) {
+  const why = !selection
+    ? 'Select a sentence in the paper first.'
+    : !projectRelative(project, selection.path)
+      ? 'The paper’s file is not inside this project.'
+      : already
+        ? 'This slide already cites what is selected.'
+        : null
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-muted-foreground h-6 gap-1 px-2 text-[11px]"
+      disabled={why !== null}
+      title={why ?? 'Cite the words selected in the paper, at the end of the line the caret is on'}
+      onClick={onCite}
+    >
+      <Quote className="size-3" />
+      Cite the selection
     </Button>
   )
 }

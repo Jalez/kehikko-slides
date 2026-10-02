@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Slide } from '../deck/format.ts'
 import { Follower, readingOf, type Reading } from './follow.ts'
@@ -35,7 +35,7 @@ export function useFollowing({
   presenting: boolean
   goTo(index: number): void
   publishDelay?: number
-}): { reading: Reading | null; missing: string | null } {
+}): { reading: Reading | null; missing: string | null; point: (passage: PointedPassage) => void } {
   const follower = useRef<Follower | null>(null)
   follower.current ??= new Follower()
   const [shown, setShown] = useState<{ reading: Reading | null; missing: string | null }>({ reading: null, missing: null })
@@ -99,5 +99,25 @@ export function useFollowing({
     [],
   )
 
-  return shown
+  /* A citation pressed: turn the paper to its exact words, and do not follow it back. */
+  const point = useCallback((passage: PointedPassage) => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    ;(follower.current as Follower).pointed()
+    void request.current('passage.set', { passage }).catch(() => {
+      /* Unhosted, or the host said no: nothing else to do. */
+    })
+  }, [])
+
+  return { ...shown, point }
+}
+
+/** A range of a file, as a citation points the paper at it. */
+export interface PointedPassage {
+  path: string
+  page: null
+  from: number
+  to: number
+  quoted: string
+  section: null
 }

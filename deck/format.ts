@@ -32,6 +32,13 @@
  * - `section: <project-relative path> | <heading title>` links the slide to a
  *   paper section. By title, because titles survive edits to the paper and
  *   byte offsets do not.
+ * - A line that is exactly `Sources:` (before `Notes:`) opens the slide's
+ *   citations, one per line: `[^1]: <project-relative path> | "<exact words>"`.
+ *   A `[^1]` in the body is the place on the slide that rests on that passage;
+ *   a source no marker names cites the slide as a whole. By the words, not by
+ *   byte offsets, for the reason sections are linked by title: words survive
+ *   edits above them, and when they do not, the citation can SAY it is adrift
+ *   rather than quietly point at whatever moved into its bytes (see cite.ts).
  * - Everything after a line that is exactly `Notes:` is speaker notes.
  * - `two-column` splits its body on a line that is exactly `|||`.
  *
@@ -52,9 +59,23 @@ export interface SectionLink {
   title: string
 }
 
+/** One passage a slide rests on: a file of the project, and its exact words there. */
+export interface Source {
+  /** What the body's `[^label]` names. */
+  label: string
+  /** Relative to the project root, like a section's path. */
+  path: string
+  /** The passage's words as they are in the file; whitespace is not significant. */
+  quote: string
+}
+
 export interface Slide {
   layout: Layout
   section: SectionLink | null
+  /** The `Sources:` block, in the order written. */
+  sources: Source[]
+  /** Lines under `Sources:` that are not a source, kept verbatim so a person's text survives. */
+  strays: string[]
   /** Directives this module does not know, kept verbatim in order. */
   extra: [string, string][]
   /** The Markdown the slide shows, without the directive comment or notes. */
@@ -78,9 +99,13 @@ export interface SlideRange {
 const SEPARATOR = /^---[ \t]*$/
 const DIRECTIVE = /^<!--([\s\S]*?)-->[ \t]*(?:\r?\n|$)/
 const NOTES = /^Notes:[ \t]*$/m
+const SOURCES = /^Sources:[ \t]*$/m
+const SOURCE_LINE = /^\[\^([A-Za-z0-9_-]{1,20})\]:[ \t]*([^|]+?)[ \t]*\|[ \t]*"(.*)"[ \t]*$/
+/** A citation marker in a slide's body. Not followed by `:`, which would be a source line. */
+export const MARKER = /\[\^([A-Za-z0-9_-]{1,20})\](?!:)/g
 
 export function emptySlide(): Slide {
-  return { layout: 'bullets', section: null, extra: [], body: '', notes: '' }
+  return { layout: 'bullets', section: null, sources: [], strays: [], extra: [], body: '', notes: '' }
 }
 
 /** Split off the front matter, if the file opens with one. */
@@ -164,8 +189,30 @@ export function parseSlide(raw: string): Slide {
     slide.notes = text.slice(notes.index + notes[0].length).trim()
     text = text.slice(0, notes.index)
   }
+  const sources = SOURCES.exec(text)
+  if (sources) {
+    for (const line of text.slice(sources.index + sources[0].length).split('\n')) {
+      if (!line.trim()) continue
+      const one = parseSource(line.trim())
+      if (one) slide.sources.push(one)
+      else slide.strays.push(line.trim())
+    }
+    text = text.slice(0, sources.index)
+  }
   slide.body = text.trim()
   return slide
+}
+
+/** One `[^label]: path | "quote"` line, or null when it is not one. */
+export function parseSource(line: string): Source | null {
+  const match = SOURCE_LINE.exec(line)
+  if (!match) return null
+  const quote = (match[3] ?? '').trim()
+  return quote ? { label: match[1]!, path: match[2]!.trim(), quote } : null
+}
+
+export function serialiseSource(source: Source): string {
+  return `[^${source.label}]: ${source.path} | "${source.quote}"`
 }
 
 export function parseDeck(text: string, fallbackTitle = 'Untitled deck'): Deck {
@@ -190,6 +237,9 @@ export function serialiseSlide(slide: Slide): string {
   const parts: string[] = []
   if (directives.length) parts.push(`<!-- ${directives.join('; ')} -->`)
   if (slide.body.trim()) parts.push(slide.body.trim())
+  if (slide.sources.length || slide.strays.length) {
+    parts.push(['Sources:', ...slide.sources.map(serialiseSource), ...slide.strays].join('\n'))
+  }
   if (slide.notes.trim()) parts.push(`Notes:\n${slide.notes.trim()}`)
   return parts.join('\n')
 }
@@ -286,8 +336,61 @@ export function deckProblems(text: string): string[] {
       if (key === 'layout') problems.push(`Slide ${i}: layout "${value}" is not one of ${LAYOUTS.join(', ')}.`)
       if (key === 'section') problems.push(`Slide ${i}: section "${value}" is not "<project-relative path> | <heading title>".`)
     }
+    for (const line of slide.strays) {
+      problems.push(`Slide ${i}: "${line.slice(0, 80)}" under Sources: is not [^label]: <project-relative path> | "<exact words>".`)
+    }
+    const labels = new Set<string>()
+    for (const source of slide.sources) {
+      if (labels.has(source.label)) problems.push(`Slide ${i}: [^${source.label}] is given two sources.`)
+      labels.add(source.label)
+      const why = uncitable(source)
+      if (why) problems.push(`Slide ${i}: ${why}`)
+    }
+    for (const label of markersIn(slide.body)) {
+      if (!labels.has(label)) problems.push(`Slide ${i}: [^${label}] is on the slide but has no line under Sources:.`)
+    }
   })
   return problems
+}
+
+/**
+ * Why a source cannot be written as a source line, or null when it can. The
+ * path must be inside the project and hold no `|`; the quote is one line.
+ */
+export function uncitable(source: Pick<Source, 'path' | 'quote'>): string | null {
+  if (!source.path || /[|\n]/.test(source.path)) return `the source path "${source.path.slice(0, 80)}" is empty or has | or a line break in it.`
+  if (source.path.startsWith('/') || /^[A-Za-z]:/.test(source.path) || source.path.split('/').includes('..')) {
+    return `the source path "${source.path.slice(0, 80)}" is not relative to the project and inside it.`
+  }
+  if (!source.quote.trim()) return 'a source needs the exact words it cites.'
+  if (/\n/.test(source.quote)) return 'a source quote is one line; whitespace in it is not significant, so join its lines with spaces.'
+  return null
+}
+
+/**
+ * The text of a body with fenced and inline code taken out, so a `[^1]`
+ * written inside code is shown as code and not read as a citation.
+ */
+function outsideCode(body: string, each: (prose: string) => string): string {
+  return body
+    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/)
+    .map((part, i) => (i % 2 === 1 ? part : each(part)))
+    .join('')
+}
+
+/** The labels a body's markers name, in order, each once. */
+export function markersIn(body: string): string[] {
+  const found: string[] = []
+  outsideCode(body, (prose) => {
+    for (const match of prose.matchAll(MARKER)) if (!found.includes(match[1]!)) found.push(match[1]!)
+    return prose
+  })
+  return found
+}
+
+/** A body with each marker replaced by what `as` makes of its label (outside code). */
+export function replaceMarkers(body: string, as: (label: string) => string): string {
+  return outsideCode(body, (prose) => prose.replace(MARKER, (_, label: string) => as(label)))
 }
 
 /**

@@ -3,6 +3,7 @@ import { isAbsolute, relative } from 'node:path'
 import { KEHIKOT_DIR } from 'roadmap-module-protocol'
 
 import { PATHS, TICKET_HEADER as HEADER, type DeckChange, type PresentState } from './deck/api.ts'
+import { addCitation, linesOf, resolveSource, type Resolved } from './deck/cite.ts'
 import {
   deckProblems,
   parseDeck,
@@ -16,6 +17,9 @@ import { followTalk, moveTalk, poke, watchDecks } from './live.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
 import {
   badSlug,
+  citations,
+  citedSlice,
+  citedText,
   createDeck,
   deleteDeck,
   history,
@@ -92,7 +96,9 @@ const FORMAT =
   'A deck is one Markdown file. Front matter (title, epic, aspect) between --- lines, then slides separated by a line '
   + 'that is exactly ---. A slide may open with one directive comment, e.g. <!-- layout: two-column; section: '
   + 'chapters/2.tex | Bridging the gap -->; layouts are title, bullets (default), two-column (split on a ||| line), '
-  + 'image, quote. Everything after a line that is exactly Notes: is speaker notes.'
+  + 'image, quote. A line that is exactly Sources: (before Notes:) opens the slide\'s citations, one per line: '
+  + '[^1]: <project-relative path> | "<the exact words in that file>", and [^1] in the body marks what rests on it '
+  + '(cite_slide writes both for you). Everything after a line that is exactly Notes: is speaker notes.'
 
 function tools() {
   return [
@@ -109,7 +115,10 @@ function tools() {
       name: 'read_deck',
       description:
         'One deck: a numbered list of its slides (layout, headline, linked paper section, whether it has notes), '
-        + 'then its whole Markdown. Read it before editing; the numbers are what edit_slide and link_slide take.',
+        + 'each slide\'s citations with the lines of the file they were found on and whether they still hold, '
+        + 'then its whole Markdown. Read it before editing; the numbers are what edit_slide, link_slide and cite_slide take. '
+        + 'A citation marked ADRIFT cites words its file no longer has: the paper changed under the slide, so check '
+        + 'the slide\'s claim against the paper before fixing the quote.',
       inputSchema: { type: 'object', properties: { ...PROJECT, ...DECK }, required: ['project', 'deck'] },
     },
     {
@@ -178,6 +187,32 @@ function tools() {
         required: ['project', 'deck', 'index', 'path', 'title'],
       },
     },
+    {
+      name: 'cite_slide',
+      description:
+        'Say exactly which words of a file a claim on a slide rests on. Adds [^n] after the slide words you name in '
+        + 'at (or nowhere, citing the slide as a whole, when at is left out) and a source line under the slide\'s '
+        + 'Sources:. quote must be the file\'s own words — the .tex source as the paper module\'s read_source shows '
+        + 'it, markup and all; line breaks and runs of spaces need not match. It is refused unless the words are in '
+        + 'the file exactly once, so a citation cannot be written that already points nowhere. Citing the same words '
+        + 'twice on a slide reuses their number. Recorded in the history, so the person can undo it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...PROJECT,
+          ...DECK,
+          ...INDEX,
+          path: { type: 'string', description: 'The cited file, relative to the project (e.g. chapters/4_results.tex).' },
+          quote: { type: 'string', description: 'The exact words in that file the claim rests on: a sentence or two, enough to occur once.' },
+          at: {
+            type: 'string',
+            description: 'Words on the slide, exactly as its body has them and occurring once, that the marker goes right after (e.g. "3.51"). Leave out to cite the slide as a whole.',
+          },
+          ...AGENT_ARG,
+        },
+        required: ['project', 'deck', 'index', 'path', 'quote'],
+      },
+    },
   ]
 }
 
@@ -236,19 +271,36 @@ function checked(text: string): void {
   if (problems.length) throw new Error(`${problems.join(' ')} Nothing was written.`)
 }
 
+/** One citation as read_deck lists it. */
+function citationLine(one: Resolved): string {
+  const where = one.at ? `${one.path} ${linesOf(one.at)}` : one.path
+  const said = one.quote.length > 90 ? `${one.quote.slice(0, 87)}…` : one.quote
+  if (one.status === 'holds') return `     [^${one.label}] ${where}: "${said}"`
+  if (one.status === 'ambiguous') return `     [^${one.label}] ${where} — AMBIGUOUS, the words occur ${one.count} times; quote more: "${said}"`
+  if (one.status === 'adrift') return `     [^${one.label}] ${one.path} — ADRIFT, these words are no longer in the file: "${said}"`
+  return `     [^${one.label}] ${one.path} — UNREADABLE, no such file inside the project: "${said}"`
+}
+
 function readDeckText(project: string, slug: string): string {
   const deck = must(readDeck(project, slug), 'read_deck')
   const parsed = parseDeck(deck.text, slug)
-  const lines = parsed.slides.map((slide, i) => {
+  const cited = citations(project, slug)
+  const found = cited.ok ? cited.value : []
+  const lines = parsed.slides.flatMap((slide, i) => {
     const parts = [`${i}. ${slide.layout}`, slideHeadline(slide) || '(empty)']
     if (slide.section) parts.push(`section: ${slide.section.path} | ${slide.section.title}`)
     if (slide.notes) parts.push('has notes')
-    return parts.join(' — ')
+    return [parts.join(' — '), ...(found[i] ?? []).map(citationLine)]
   })
+  const all = found.flat()
+  const broken = all.filter((one) => one.status !== 'holds').length
+  const tally = all.length
+    ? `${all.length} citation${all.length === 1 ? '' : 's'}${broken ? `, ${broken} not holding (see below)` : ', all holding'}.`
+    : 'No citations yet: cite_slide adds them.'
   return [
-    `"${parsed.title}" (${slug})${parsed.epic ? `, epic ${parsed.epic}` : ''}, ${parsed.aspect}, ${parsed.slides.length} slide${parsed.slides.length === 1 ? '' : 's'}.`,
+    `"${parsed.title}" (${slug})${parsed.epic ? `, epic ${parsed.epic}` : ''}, ${parsed.aspect}, ${parsed.slides.length} slide${parsed.slides.length === 1 ? '' : 's'}. ${tally}`,
     '',
-    'Slides (index. layout — headline — section):',
+    'Slides (index. layout — headline — section; then each citation, with the lines it was found on):',
     ...lines,
     '',
     'Markdown:',
@@ -350,6 +402,30 @@ function call(name: string, args: Record<string, unknown>): string {
     must(recordedWrite(project, slug, next, by(args, summary)), name)
     poke(project)
     return name === 'edit_slide' ? `Replaced slide ${index} of "${slug}".` : `Slide ${index} of "${slug}" now follows "${str(args.title, 300)}".`
+  }
+
+  if (name === 'cite_slide') {
+    const project = projectOf(args, name)
+    const slug = deckOf(args)
+    const root = must(projectRoot(project), name)
+    const text = must(readDeck(project, slug), name).text
+    const index = indexOf(args, slideRanges(text.replace(/\r\n/g, '\n')).length, slug)
+    const path = sectionPath(project, str(args.path, 1000))
+    const quote = typeof args.quote === 'string' ? args.quote : ''
+    const file = citedText(root, path)
+    if (file === null) throw new Error(`"${path}" is not a readable file inside this project. Give the path relative to the project, as list_sections gives it. Nothing was written.`)
+    const found = resolveSource({ label: '', path, quote }, file)
+    if (found.status === 'adrift') {
+      throw new Error(`Those words are not in ${path}. Quote the file's own text, as read_source shows it (LaTeX markup included); only whitespace may differ. Nothing was written.`)
+    }
+    if (found.status === 'ambiguous') throw new Error(`Those words occur ${found.count} times in ${path}. Quote more of the sentence so they occur once. Nothing was written.`)
+    const at = typeof args.at === 'string' && args.at.length ? args.at : null
+    const done = addCitation(text, index, { path, quote }, at ? { after: at } : { whole: true })
+    if ('error' in done) throw new Error(`${done.error} Nothing was written.`)
+    checked(done.text)
+    must(recordedWrite(project, slug, done.text, by(args, `cited ${path} ${linesOf(found.at!)} on slide ${index}`)), name)
+    poke(project)
+    return `Slide ${index} of "${slug}" now cites ${path} ${linesOf(found.at!)} as [^${done.label}]${at ? `, after "${at.slice(0, 60)}"` : ', for the slide as a whole'}.`
   }
 
   throw new Error(`There is no tool "${name.slice(0, 60)}" here.`)
@@ -455,6 +531,12 @@ export function answer(
   if (path === PATHS.history && method === 'GET') return done(history(project, slug), (entries) => ({ entries }))
   if (path === PATHS.undo && method === 'POST') {
     return after(done(undo(project, slug, field(body, 'id')), (undone) => ({ version: undone.version })))
+  }
+
+  if (path === PATHS.citations && method === 'GET') return done(citations(project, slug), (slides) => ({ slides }))
+  if (path === PATHS.source && method === 'GET') {
+    const number = (name: string) => Number(query.get(name) ?? NaN)
+    return done(citedSlice(project, query.get('path') ?? '', number('from'), number('to')), (text) => ({ text }))
   }
 
   if (path === PATHS.present && method === 'POST') {

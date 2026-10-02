@@ -193,3 +193,17 @@ describe('linking a slide', () => {
     expect(setSection(DECK, 9, { path: 'a.tex', title: 'A' })).toBeNull()
   })
 })
+
+describe('a citation pointed at', () => {
+  test('the paper turning to the cited words does not pull the slides to another slide', () => {
+    const { one, tick } = follower()
+    one.pointed()
+    /* Slide 4 is on screen; the cited words sit in Results, which slide 3 is linked to. */
+    expect(one.read(reading('Results'), at(4), true)).toBeNull()
+    tick(ECHO_GRACE_MS + 1)
+    /* Taken as seen: the same reading later is still not a move. */
+    expect(one.read(reading('Results'), at(4), true)).toBeNull()
+    /* A new section after the quiet is followed as usual. */
+    expect(one.read(reading('Bridging the gap'), at(4), true)).toBe(1)
+  })
+})

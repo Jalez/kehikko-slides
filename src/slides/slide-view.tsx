@@ -1,8 +1,9 @@
-import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useContext, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
 import { columns, type Aspect, type Slide } from '../../deck/format.ts'
+import { CiteContext, withMarkers, type Cite } from './citations.tsx'
 import { SlideMarkdown } from './markdown.tsx'
 
 /**
@@ -26,10 +27,13 @@ export function SlideView({
   fit = 'contain',
   showSection = false,
   onUnlink,
+  cite = null,
   className,
 }: {
   slide: Slide
   aspect?: Aspect
+  /** Given, the slide's citation markers are drawn and pressable (the editor's preview); otherwise they are left out. */
+  cite?: Cite | null
   /**
    * `contain` fits the whole slide inside the box and centres it (preview,
    * presenting). `width` makes the box as tall as the slide is at the box's
@@ -66,7 +70,9 @@ export function SlideView({
         className="absolute origin-top-left"
         style={{ width, height: SLIDE_HEIGHT, left, top, transform: `scale(${scale})` }}
       >
-        <SlideFace slide={slide} showSection={showSection} onUnlink={onUnlink} />
+        <CiteContext.Provider value={cite}>
+          <SlideFace slide={slide} showSection={showSection} onUnlink={onUnlink} />
+        </CiteContext.Provider>
       </div>
     </div>
   )
@@ -153,9 +159,10 @@ function Layout({ slide }: { slide: Slide }) {
 }
 
 function Prose({ text, className }: { text: string; className?: string }) {
+  const cite = useContext(CiteContext)
   return (
     <div className={cn('slide-prose', className)}>
-      <SlideMarkdown text={text} />
+      <SlideMarkdown text={withMarkers(text, cite !== null)} />
     </div>
   )
 }

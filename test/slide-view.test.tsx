@@ -96,3 +96,48 @@ describe('helpers', () => {
     expect(isProjectPath('data:image/png;base64,AA')).toBe(false)
   })
 })
+
+describe('citation markers', () => {
+  const RAW = '## Results\n- Mean 3.51[^1] after `code[^2]`\nSources:\n[^1]: ch/4.tex | "highest after"'
+  const found = {
+    label: '1',
+    path: 'ch/4.tex',
+    quote: 'highest after',
+    status: 'holds' as const,
+    at: { from: 10, to: 23, line: 3, endLine: 4 },
+    count: 1,
+  }
+
+  test('are left out where nobody is editing: no marker, no stray [^1]', () => {
+    const view = draw(RAW)
+    expect(view.querySelector('[data-testid="cite-mark"]')).toBeNull()
+    expect(view.textContent).toContain('Mean 3.51 after')
+    expect(view.textContent).not.toContain('[^1]')
+    /* Inside code a marker is code. */
+    expect(view.querySelector('code')?.textContent).toBe('code[^2]')
+  })
+
+  test('are drawn in the editor, say where they hold, and point when pressed', () => {
+    const pressed: string[] = []
+    const view = render(
+      <SlideView slide={parseSlide(RAW)} cite={{ found: new Map([['1', found]]), lit: new Set(['1']), onCite: (l) => pressed.push(l) }} />,
+    ).container
+    const mark = view.querySelector('[data-testid="cite-mark"]') as HTMLButtonElement
+    expect(mark.textContent).toBe('1')
+    expect(mark.dataset.status).toBe('holds')
+    expect(mark.title).toContain('ch/4.tex, lines 3–4')
+    expect(mark.className).toContain('ring-2')
+    mark.click()
+    expect(pressed).toEqual(['1'])
+  })
+
+  test('a marker whose words are gone is drawn as broken and cannot point', () => {
+    const view = render(
+      <SlideView slide={parseSlide(RAW)} cite={{ found: new Map([['1', { ...found, status: 'adrift' as const, at: null }]]), lit: new Set(), onCite: () => {} }} />,
+    ).container
+    const mark = view.querySelector('[data-testid="cite-mark"]') as HTMLButtonElement
+    expect(mark.dataset.status).toBe('adrift')
+    expect(mark.disabled).toBe(true)
+    expect(mark.title).toContain('no longer has these words')
+  })
+})

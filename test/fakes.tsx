@@ -114,6 +114,14 @@ export function fakeDecks(
       talkers.add(onState)
       return () => talkers.delete(onState)
     },
+    async citations(project, slug) {
+      record('citations', project, slug)
+      return []
+    },
+    async source(project, path, from, to) {
+      record('source', project, path, from, to)
+      return ''
+    },
     ...over,
   }
   return {

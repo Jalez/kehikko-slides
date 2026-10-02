@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -136,6 +136,7 @@ describe('the MCP door', () => {
       'write_deck',
       'edit_slide',
       'link_slide',
+      'cite_slide',
     ])
   })
 
@@ -231,5 +232,55 @@ describe('the live doors', () => {
   test('a GET that is not a stream door is left to answer()', () => {
     expect(stream('GET', '/api/decks', none, () => {})).toBeNull()
     expect(stream('POST', '/api/present', none, () => {})).toBeNull()
+  })
+})
+
+describe('citations', () => {
+  const CHAPTER = 'Intro.\n\nThe mean rating was highest after the\nvanilla-JavaScript module (3.51). It fell — after React.\nThe end. The end.\n'
+
+  function cited(name: string): string {
+    const dir = project(name)
+    mkdirSync(join(dir, 'ch'), { recursive: true })
+    writeFileSync(join(dir, 'ch/4.tex'), CHAPTER)
+    tool('create_deck', { project: dir, title: 'D' })
+    tool('write_deck', { project: dir, deck: 'd', markdown: '# One\n- Mean 3.51 after vanilla\n', summary: 'draft' })
+    return dir
+  }
+
+  test('cite_slide writes the marker and the source, and read_deck shows the lines it holds on', () => {
+    const dir = cited('cite')
+    const done = tool('cite_slide', { project: dir, deck: 'd', index: 0, path: 'ch/4.tex', quote: 'highest after the vanilla-JavaScript module', at: '3.51', agent: 'claude' })
+    expect(done).toEqual({ error: false, text: 'Slide 0 of "d" now cites ch/4.tex lines 3–4 as [^1], after "3.51".' })
+    const text = (readDeck(dir, 'd') as { value: { text: string } }).value.text
+    expect(text).toContain('- Mean 3.51[^1] after vanilla\nSources:\n[^1]: ch/4.tex | "highest after the vanilla-JavaScript module"')
+    expect((history(dir, 'd') as { value: { summary: string }[] }).value[0]!.summary).toBe('cited ch/4.tex lines 3–4 on slide 0')
+    const read = tool('read_deck', { project: dir, deck: 'd' }).text
+    expect(read).toContain('1 citation, all holding.')
+    expect(read).toContain('[^1] ch/4.tex lines 3–4: "highest after the vanilla-JavaScript module"')
+  })
+
+  test('a quote the file does not hold, or holds twice, is refused; one it no longer holds reads as adrift', () => {
+    const dir = cited('cite-refused')
+    expect(tool('cite_slide', { project: dir, deck: 'd', index: 0, path: 'ch/4.tex', quote: 'It rose' })).toMatchObject({ error: true, text: expect.stringContaining('not in ch/4.tex') })
+    expect(tool('cite_slide', { project: dir, deck: 'd', index: 0, path: 'ch/4.tex', quote: 'The end.' })).toMatchObject({ error: true, text: expect.stringContaining('occur 2 times') })
+    expect(tool('cite_slide', { project: dir, deck: 'd', index: 0, path: '../x.tex', quote: 'a' })).toMatchObject({ error: true, text: expect.stringContaining('not a file inside') })
+    expect(tool('cite_slide', { project: dir, deck: 'd', index: 0, path: 'ch/4.tex', quote: 'It fell' }).error).toBe(false)
+    writeFileSync(join(dir, 'ch/4.tex'), CHAPTER.replace('It fell', 'It dipped'))
+    const read = tool('read_deck', { project: dir, deck: 'd' }).text
+    expect(read).toContain('1 citation, 1 not holding (see below).')
+    expect(read).toContain('[^1] ch/4.tex — ADRIFT, these words are no longer in the file: "It fell"')
+  })
+
+  test('the page reads every slide\'s citations, and the exact words of a selection', () => {
+    const dir = cited('cite-page')
+    tool('cite_slide', { project: dir, deck: 'd', index: 0, path: 'ch/4.tex', quote: 'It fell', at: '3.51' })
+    const reply = answer('GET', '/api/citations', q({ project: dir, slug: 'd' }), null, null)
+    const slides = (reply?.body as { slides: { label: string; status: string; at: { from: number; line: number } }[][] }).slides
+    expect(slides[0]![0]).toMatchObject({ label: '1', status: 'holds', at: { line: 4 } })
+    const from = slides[0]![0]!.at.from
+    const source = answer('GET', '/api/source', q({ project: dir, path: 'ch/4.tex', from: String(from), to: String(from + 7) }), null, null)
+    expect(source?.body).toEqual({ ok: true, text: 'It fell' })
+    const outside = answer('GET', '/api/source', q({ project: dir, path: '../../etc/hosts', from: '0', to: '5' }), null, null)
+    expect(outside?.status).toBe(404)
   })
 })
