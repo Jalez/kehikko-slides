@@ -29,6 +29,9 @@ export interface SectionPassage {
 /** The fields of the host's passage this reads; the protocol's `Passage` fits it. */
 export interface PassageLike {
   path: string
+  /** A selected range, in bytes, when there is one. */
+  from?: number | null
+  to?: number | null
   section?: { title: string; from?: number | null; to?: number | null } | null
 }
 
@@ -105,6 +108,7 @@ export class Follower {
   private sent: string | null = null
   private sentAt = 0
   private steering: number | null = null
+  private quietUntil = 0
   /** The section the paper is on that no slide is linked to, for the indicator. */
   missing: string | null = null
   /** The section the paper is on, for the indicator's hint. */
@@ -126,6 +130,11 @@ export class Follower {
     const key = reading ? keyOf(reading) : null
     if (key === this.seen) return null
     this.reading = reading
+    if (this.now() < this.quietUntil) {
+      this.seen = key
+      this.missing = null
+      return null
+    }
     if (this.sent !== null && key !== this.sent && this.now() - this.sentAt < ECHO_GRACE_MS) return null
     this.seen = key
     if (key !== null && key === this.sent) {
@@ -171,6 +180,18 @@ export class Follower {
     /* Already sent and not yet said back: sending it again is the same request twice. */
     if (key === this.sent && this.now() - this.sentAt < ECHO_GRACE_MS) return null
     return passage
+  }
+
+  /**
+   * A citation was pointed at: the paper is about to turn to wherever those
+   * words are, which need not be this slide's section. What it says in the
+   * next moment is taken as seen and followed nowhere, or pressing a marker
+   * would pull the slides to whichever slide is linked to the cited section.
+   */
+  pointed(): void {
+    this.quietUntil = this.now() + ECHO_GRACE_MS
+    this.sent = null
+    this.missing = null
   }
 
   /** A passage was published: expect it back. */

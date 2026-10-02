@@ -1,4 +1,6 @@
 import type {
+  CitationsReply,
+  CitationView,
   ConflictReply,
   CreateDeckReply,
   DeckSummary,
@@ -7,6 +9,7 @@ import type {
   ListDecksReply,
   PresentState,
   ReadDeckReply,
+  SourceReply,
   Version,
   WatchEvent,
   WriteDeckReply,
@@ -47,6 +50,10 @@ export interface Decks {
   present(project: string, slug: string, index: number, blank: boolean): Promise<void>
   /** Calls `onState` with where a talk is, at once and on every move. Returns the unsubscribe. */
   followTalk(project: string, slug: string, onState: (state: PresentState) => void): () => void
+  /** Every slide's sources, looked for in their files; indexed like the slides. */
+  citations(project: string, slug: string): Promise<CitationView[][]>
+  /** The exact words of a project file between two byte offsets. */
+  source(project: string, path: string, from: number, to: number): Promise<string>
 }
 
 async function body<T>(response: Response): Promise<T> {
@@ -131,5 +138,12 @@ export const decks: Decks = {
       }
     }
     return () => source.close()
+  },
+  async citations(project, slug) {
+    return (await body<CitationsReply>(await fetch(`./api/citations?${query({ project, slug })}`))).slides
+  },
+  async source(project, path, from, to) {
+    const fields = { project, path, from: String(from), to: String(to) }
+    return (await body<SourceReply>(await fetch(`./api/source?${query(fields)}`))).text
   },
 }

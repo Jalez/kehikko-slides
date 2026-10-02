@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import type { PluggableList } from 'unified'
 
+import { CITE_HREF, CiteMark } from './citations.tsx'
+
 /**
  * Where a picture a slide names is fetched from. A URL (`https:`, `data:`, an
  * absolute `/…`) is used as written; anything else is a path relative to the
@@ -31,7 +33,12 @@ const COMPONENTS: Components = {
   img: ({ src, alt, node: _node, ...rest }) => (
     <img {...rest} src={typeof src === 'string' && isProjectPath(src) ? assetUrl(src) : src} alt={alt ?? ''} />
   ),
-  a: ({ node: _node, ...rest }) => <a {...rest} target="_blank" rel="noreferrer" />,
+  a: ({ node: _node, href, ...rest }) =>
+    typeof href === 'string' && href.startsWith(CITE_HREF) ? (
+      <CiteMark label={href.slice(CITE_HREF.length)} />
+    ) : (
+      <a {...rest} href={href} target="_blank" rel="noreferrer" />
+    ),
 }
 
 /**

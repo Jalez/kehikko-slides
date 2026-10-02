@@ -32,6 +32,10 @@ export const PATHS = {
   watch: '/api/watch',
   /** GET ?project&slug — server-sent events of {@link PresentState}. POST {@link PresentMove}. */
   present: '/api/present',
+  /** GET ?project&slug — every slide's sources, looked for in their files: {@link CitationsReply}. */
+  citations: '/api/citations',
+  /** GET ?project&path&from&to — the exact words of a project file between two byte offsets: {@link SourceReply}. */
+  source: '/api/source',
 } as const
 
 export interface Refusal {
@@ -163,6 +167,28 @@ export interface PresentMove {
   slug: string
   index: number
   blank?: boolean
+}
+
+/** One source of one slide, as the store found it (see `deck/cite.ts`). */
+export interface CitationView {
+  label: string
+  path: string
+  quote: string
+  status: 'holds' | 'ambiguous' | 'adrift' | 'unreadable'
+  /** Byte offsets and 1-based lines, when the words were found. */
+  at: { from: number; to: number; line: number; endLine: number } | null
+  count: number
+}
+
+export interface CitationsReply {
+  ok: true
+  /** Indexed like the deck's slides. */
+  slides: CitationView[][]
+}
+
+export interface SourceReply {
+  ok: true
+  text: string
 }
 
 /*
