@@ -7,7 +7,7 @@ import { PresenterView } from '../src/presenter.tsx'
 import { PrintView } from '../src/print.tsx'
 import { FALLBACK_NOTE } from '../src/stage.tsx'
 import { decks as realDecks } from '../src/wire/decks.ts'
-import type { Host } from '../src/wire/use-roadmap.ts'
+import type { Host } from '../src/wire/use-kehikot.ts'
 import { DECK, FakeEditor, editor, fakeDecks, host, pause, preview } from './fakes.tsx'
 
 afterEach(cleanup)

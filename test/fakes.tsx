@@ -5,7 +5,7 @@ import type { DeckSummary, HistoryEntry, PresentState, Version, WatchEvent } fro
 import { Screen } from '../src/app.tsx'
 import type { EditorProps } from '../src/editor/deck-editor.tsx'
 import type { Decks, SaveResult } from '../src/wire/decks.ts'
-import type { Host } from '../src/wire/use-roadmap.ts'
+import type { Host } from '../src/wire/use-kehikot.ts'
 
 /* The fakes the screen tests share: a host, an in-memory store, a textarea for CodeMirror. */
 

@@ -7,7 +7,7 @@ import type { Editor } from '@/editor/deck-editor'
 import { cn } from '@/lib/utils'
 import { SlideView } from '@/slides/slide-view'
 import type { Decks } from '@/wire/decks'
-import type { Host } from '@/wire/use-roadmap'
+import type { Host } from '@/wire/use-kehikot'
 
 import type { CitationView, WatchEvent } from '../deck/api.ts'
 import { addCitation } from '../deck/cite.ts'

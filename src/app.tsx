@@ -7,14 +7,14 @@ import { DeckEditor, type Editor } from '@/editor/deck-editor'
 import { HistoryDialog } from '@/history'
 import { Switcher, type Item } from '@/switcher'
 import { decks as realDecks, type Decks } from '@/wire/decks'
-import { useRoadmap, type Host } from '@/wire/use-roadmap'
+import { useKehikot, type Host } from '@/wire/use-kehikot'
 import { Workspace } from '@/workspace'
 
 import type { DeckSummary, WatchEvent } from '../deck/api.ts'
 import type { SaveState } from './use-deck.ts'
 
 export function App() {
-  return <Screen host={useRoadmap()} />
+  return <Screen host={useKehikot()} />
 }
 
 /**

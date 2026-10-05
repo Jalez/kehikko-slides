@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { MODULE_ID, manifestSchema, moduleFolder } from 'roadmap-module-protocol'
+import { MODULE_ID, manifestSchema, moduleFolder } from 'kehikot-module-protocol'
 
 import { ID, MANIFEST, PREFERRED_PORT } from '../manifest.ts'
 

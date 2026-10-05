@@ -2,7 +2,7 @@
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { originFor, registerAt } from 'roadmap-module-protocol/serve'
+import { originFor, registerAt } from 'kehikot-module-protocol/serve'
 
 import { ID, PREFERRED_PORT } from './manifest.ts'
 
