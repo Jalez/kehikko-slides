@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Slide } from '../deck/format.ts'
 import { Follower, readingOf, type Reading } from './follow.ts'
-import type { Host } from './wire/use-roadmap.ts'
+import type { Host } from './wire/use-kehikot.ts'
 
 /** How long the slides stay on a slide before the paper is turned to it: a run of key presses turns it once. */
 export const PUBLISH_DELAY_MS = 150

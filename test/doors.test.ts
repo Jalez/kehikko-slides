@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { WELL_KNOWN } from 'roadmap-module-protocol'
+import { WELL_KNOWN } from 'kehikot-module-protocol'
 
 import { parseDeck } from '../deck/format.ts'
 import { MANIFEST, TICKET, answer, stream } from '../doors.ts'

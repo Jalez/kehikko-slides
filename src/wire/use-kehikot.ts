@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 
-import { useRoadmap as useProtocolRoadmap, type Roadmap, type Where } from 'roadmap-module-protocol/client/react'
+import { useKehikot as useProtocolKehikot, type Kehikot, type Where } from 'kehikot-module-protocol/client/react'
 
 import type { PassageLike } from '../follow.ts'
 
@@ -9,7 +9,7 @@ import { ID } from '../../manifest.ts'
 /**
  * What the screen needs from the host, and nothing about how it arrived.
  *
- * A thin wrapper over the protocol's `useRoadmap`: it applies the host's theme
+ * A thin wrapper over the protocol's `useKehikot`: it applies the host's theme
  * to <html> and flattens the context into the fields this module reads, so a
  * screen can be rendered in a test with a plain object (see `Host`).
  */
@@ -28,12 +28,12 @@ export interface Host {
    */
   passage: PassageLike | null
   /** Ask the host for something (a method from the protocol). Rejects when unhosted. */
-  request: Roadmap['request']
+  request: Kehikot['request']
 }
 
-export function useRoadmap(): Host {
-  const roadmap = useProtocolRoadmap(ID)
-  const context = roadmap.context
+export function useKehikot(): Host {
+  const kehikot = useProtocolKehikot(ID)
+  const context = kehikot.context
   const theme = context?.theme ?? 'light'
 
   useEffect(() => {
@@ -45,14 +45,14 @@ export function useRoadmap(): Host {
 
   return useMemo(
     () => ({
-      where: roadmap.where,
+      where: kehikot.where,
       project: context?.project ?? null,
       projectPath: context?.projectPath ?? null,
       epic: context?.epic ?? null,
       theme,
       passage: context?.passage ?? null,
-      request: roadmap.request,
+      request: kehikot.request,
     }),
-    [roadmap.where, roadmap.request, context, theme],
+    [kehikot.where, kehikot.request, context, theme],
   )
 }

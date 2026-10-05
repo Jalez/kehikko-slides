@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'node:path'
 
-import { KEHIKOT_DIR } from 'roadmap-module-protocol'
+import { KEHIKOT_DIR } from 'kehikot-module-protocol'
 
 import { PATHS, TICKET_HEADER as HEADER, type DeckChange, type PresentState } from './deck/api.ts'
 import { addCitation, linesOf, resolveSource, type Resolved } from './deck/cite.ts'
@@ -70,7 +70,7 @@ const refused = (failure: Failure): Reply =>
     : bad(failure.error, failure.status ?? 400)
 
 /** What an agent is called when it does not say. */
-const AGENT = process.env.SLIDES_AGENT ?? process.env.ROADMAP_AGENT ?? 'an agent'
+const AGENT = process.env.SLIDES_AGENT ?? process.env.KEHIKOT_AGENT ?? process.env.ROADMAP_AGENT ?? 'an agent'
 
 /* ------------------------------------------------------------------ *
  * The MCP door, for agents.

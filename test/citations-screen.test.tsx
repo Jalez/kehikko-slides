@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { CitationView } from '../deck/api.ts'
 import { Screen } from '../src/app.tsx'
 import type { PassageLike } from '../src/follow.ts'
-import type { Host } from '../src/wire/use-roadmap.ts'
+import type { Host } from '../src/wire/use-kehikot.ts'
 import { FakeEditor, caretAt, editor, fakeDecks, host, preview } from './fakes.tsx'
 
 afterEach(cleanup)

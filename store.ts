@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 
-import { kehikotDir, moduleDir, within } from 'roadmap-module-protocol'
+import { kehikotDir, moduleDir, within } from 'kehikot-module-protocol'
 
 import { HISTORY_PER_DECK, MAX_DECK_CHARS, SLUG, type DeckFile, type DeckSummary, type HistoryEntry } from './deck/api.ts'
 import { resolveSource, type Resolved } from './deck/cite.ts'

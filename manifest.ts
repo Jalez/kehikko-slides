@@ -1,6 +1,6 @@
-import { MANIFEST_KIND, PROTOCOL, manifestSchema, type Manifest } from 'roadmap-module-protocol'
+import { MANIFEST_KIND, PROTOCOL, manifestSchema, type Manifest } from 'kehikot-module-protocol'
 
-export const ID = 'roadmap.slides'
+export const ID = 'kehikot.slides'
 export const VERSION = '0.1.0'
 
 /**

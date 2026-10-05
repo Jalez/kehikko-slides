@@ -16,6 +16,7 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "katex": "0.16.47",
+        "kehikot-module-protocol": "git+ssh://git@github.com/Jalez/kehikko-protocol.git#main",
         "lucide-react": "^1.33.0",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
@@ -24,7 +25,6 @@
         "rehype-katex": "^7.0.1",
         "remark-gfm": "^4.0.1",
         "remark-math": "^6.0.0",
-        "roadmap-module-protocol": "git+ssh://git@github.com/Jalez/kehikko-protocol.git#main",
         "tailwind-merge": "^3.6.0",
         "zod": "^3.23.8",
       },
@@ -521,6 +521,8 @@
 
     "katex": ["katex@0.16.47", "", { "dependencies": { "commander": "^8.3.0" }, "bin": { "katex": "cli.js" } }, "sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg=="],
 
+    "kehikot-module-protocol": ["kehikot-module-protocol@git+ssh://git@github.com/Jalez/kehikko-protocol.git#c2a3c9bb8354a20f96a85ae25dbcc04759ade415", { "peerDependencies": { "react": "^18.0.0 || ^19.0.0", "zod": "^3.23.8" }, "optionalPeers": ["react"], "bin": { "kehikko-create": "./bin/create.ts" } }, "c2a3c9bb8354a20f96a85ae25dbcc04759ade415"],
+
     "lightningcss": ["lightningcss@1.32.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
 
     "lightningcss-android-arm64": ["lightningcss-android-arm64@1.32.0", "", { "os": "android", "cpu": "arm64" }, "sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg=="],
@@ -700,8 +702,6 @@
     "remark-rehype": ["remark-rehype@11.1.2", "", { "dependencies": { "@types/hast": "^3.0.0", "@types/mdast": "^4.0.0", "mdast-util-to-hast": "^13.0.0", "unified": "^11.0.0", "vfile": "^6.0.0" } }, "sha512-Dh7l57ianaEoIpzbp0PC9UKAdCSVklD8E5Rpw7ETfbTl3FqcOOgq5q2LVDhgGCkaBv7p24JXikPdvhhmHvKMsw=="],
 
     "remark-stringify": ["remark-stringify@11.0.0", "", { "dependencies": { "@types/mdast": "^4.0.0", "mdast-util-to-markdown": "^2.0.0", "unified": "^11.0.0" } }, "sha512-1OSmLd3awB/t8qdoEOMazZkNsfVTeY4fTsgzcQFdXNq8ToTN4ZGwrMnlda4K6smTFKD+GRV6O48i6Z4iKgPPpw=="],
-
-    "roadmap-module-protocol": ["roadmap-module-protocol@git+ssh://git@github.com/Jalez/kehikko-protocol.git#1caf657b9273813b3e7bfb83bb469bcee3a62f7b", { "peerDependencies": { "react": "^18.0.0 || ^19.0.0", "zod": "^3.23.8" }, "optionalPeers": ["react"], "bin": { "kehikko-create": "./bin/create.ts" } }, "1caf657b9273813b3e7bfb83bb469bcee3a62f7b"],
 
     "rollup": ["rollup@4.63.6", "", { "dependencies": { "@types/estree": "1.0.9" }, "optionalDependencies": { "@napi-rs/lzma-linux-x64-gnu": "1.5.1", "@rollup/rollup-android-arm-eabi": "4.63.6", "@rollup/rollup-android-arm64": "4.63.6", "@rollup/rollup-darwin-arm64": "4.63.6", "@rollup/rollup-darwin-x64": "4.63.6", "@rollup/rollup-freebsd-arm64": "4.63.6", "@rollup/rollup-freebsd-x64": "4.63.6", "@rollup/rollup-linux-arm-gnueabihf": "4.63.6", "@rollup/rollup-linux-arm-musleabihf": "4.63.6", "@rollup/rollup-linux-arm64-gnu": "4.63.6", "@rollup/rollup-linux-arm64-musl": "4.63.6", "@rollup/rollup-linux-loong64-gnu": "4.63.6", "@rollup/rollup-linux-loong64-musl": "4.63.6", "@rollup/rollup-linux-ppc64-gnu": "4.63.6", "@rollup/rollup-linux-ppc64-musl": "4.63.6", "@rollup/rollup-linux-riscv64-gnu": "4.63.6", "@rollup/rollup-linux-riscv64-musl": "4.63.6", "@rollup/rollup-linux-s390x-gnu": "4.63.6", "@rollup/rollup-linux-x64-gnu": "4.63.6", "@rollup/rollup-linux-x64-musl": "4.63.6", "@rollup/rollup-openbsd-x64": "4.63.6", "@rollup/rollup-openharmony-arm64": "4.63.6", "@rollup/rollup-win32-arm64-msvc": "4.63.6", "@rollup/rollup-win32-ia32-msvc": "4.63.6", "@rollup/rollup-win32-x64-gnu": "4.63.6", "@rollup/rollup-win32-x64-msvc": "4.63.6", "fsevents": "~2.3.2" }, "bin": { "rollup": "dist/bin/rollup" } }, "sha512-w4+GKyTBqshj84F1GF3s2zxAPFZPEmNkCbQtqilsYS7GsksmX6VoV7UggfZg8sUHCCOkBe7UtQp6fZwbH311FQ=="],
 
