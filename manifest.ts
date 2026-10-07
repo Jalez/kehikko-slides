@@ -20,6 +20,8 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   id: ID,
   name: 'Slides',
   version: VERSION,
+  /* Where a host files this module in its list, most fitting first. */
+  tags: ['writing'],
   summary: 'Presentation decks for a paper: Markdown slides that follow the paper as you read and present.',
   /* What this module's PRESENCE obliges an agent to do. Composed into every
      agent's prompt on the canvas, so write it to somebody who just arrived. */
