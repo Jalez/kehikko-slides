@@ -26,3 +26,4 @@ const written = registerAt({
 console.log(`registered: ${written.file} -> ${written.url} (${written.dir})`)
 if (written.was) console.log(`  (was ${written.was.url} in ${written.was.dir})`)
 console.log('Start the app with ./run.sh, then reload the host; it sweeps the directory on every read.')
+console.log(`If ${port} is taken, ./run.sh moves to the next free port and rewrites this file to match.`)

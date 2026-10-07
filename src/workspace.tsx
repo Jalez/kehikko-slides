@@ -95,7 +95,10 @@ export function Workspace({
     project,
     slides: deck.slides,
     current,
-    ready: doc.text !== null,
+    /* The slides come from the deferred copy: until it has caught up they are an
+       older deck's (on opening, an empty one), and a passage read against them
+       is taken as seen and never followed. */
+    ready: doc.text !== null && shown === text,
     enabled: following,
     presenting: show.presenting !== null,
     goTo,
