@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -79,6 +79,17 @@ export function Screen({
     if (open && list.some((one) => one.slug === open)) return
     setOpen(ordered[0]?.slug ?? null)
   }, [list, ordered, open])
+
+  /* Follow the epic: when the host turns to another, open that epic's first
+     deck. One with no deck leaves the open deck in place, and a deck picked by
+     hand stays until the epic changes again. */
+  const followed = useRef(host.epic)
+  useEffect(() => {
+    if (!list || followed.current === host.epic) return
+    followed.current = host.epic
+    const first = ordered[0]
+    if (first && host.epic !== null && first.epic === host.epic) setOpen(first.slug)
+  }, [list, ordered, host.epic])
 
   const create = async (title: string) => {
     if (!project) return false
