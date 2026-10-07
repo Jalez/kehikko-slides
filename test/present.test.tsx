@@ -79,6 +79,12 @@ describe('following the paper', () => {
     expect(run.published()).toEqual([])
   })
 
+  test('a deck opened while the paper is already on a section goes to its slide', async () => {
+    drawFollowing(LINKED, { passage: reading('The problem') })
+    await waitFor(() => expect(heading()).toBe('The problem'))
+    expect(following().textContent).not.toContain('No slides')
+  })
+
   test('no slides for the section: stays, and the indicator says so', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
@@ -101,7 +107,8 @@ describe('following the paper', () => {
   test('moving to a linked slide turns the paper to its section', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
-    fireEvent.click(screen.getByRole('button', { name: 'slide 3' }))
+    /* The thumbnails draw from a deferred copy of the text, a beat after the editor has it. */
+    fireEvent.click(await screen.findByRole('button', { name: 'slide 3' }))
     await waitFor(() => expect(run.published()).toHaveLength(1))
     expect(run.published()[0]).toEqual({
       passage: {
@@ -125,7 +132,7 @@ describe('following the paper', () => {
     fireEvent.click(following())
     expect(following().getAttribute('aria-pressed')).toBe('false')
     run.read(reading('The problem'))
-    fireEvent.click(screen.getByRole('button', { name: 'slide 3' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'slide 3' }))
     await pause(20)
     expect(run.published()).toEqual([])
     expect(heading()).toBe('Results')
