@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
-import { byEpic } from '../src/app.tsx'
-import { DECK, caretAt, draw, editor, fakeDecks, jumps, pause, preview, type } from './fakes.tsx'
+import { Screen, byEpic } from '../src/app.tsx'
+import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, host, jumps, pause, preview, type } from './fakes.tsx'
 
 afterEach(cleanup)
 
@@ -65,6 +65,66 @@ describe('the deck switcher', () => {
     fireEvent.click(await screen.findByLabelText('remove Seminar'))
     fireEvent.click(screen.getByText('remove it?'))
     await waitFor(() => expect(fake.of('remove')[0]?.args).toEqual(['/work/thesis', 'other']))
+  })
+})
+
+describe('following the epic', () => {
+  const list = [
+    { slug: 'catalog', title: 'Catalog', epic: 'catalog', slides: 3, updated: 0 },
+    { slug: 'catalog-b', title: 'Catalog, the long one', epic: 'catalog', slides: 3, updated: 0 },
+    { slug: 'durable', title: 'Durable writes', epic: 'durable-writes', slides: 3, updated: 0 },
+  ]
+  /** The screen on one epic, and a way for the host to say another. */
+  function drawOn(epic: string | null) {
+    const fake = fakeDecks({}, { list })
+    const at = (epic: string | null) => <Screen host={host({ epic })} decks={fake.decks} editor={FakeEditor} saveDelay={20} />
+    const view = render(at(epic))
+    return { fake, turn: (epic: string | null) => view.rerender(at(epic)) }
+  }
+  const shown = (name: RegExp) => screen.findByRole('button', { name })
+  const pick = async (name: string) => {
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Catalog|Durable/ }), { button: 0, ctrlKey: false })
+    const rows = await screen.findAllByRole('menuitem')
+    fireEvent.click(rows.find((row) => row.textContent === name) as HTMLElement)
+  }
+
+  test('a new epic opens its first deck', async () => {
+    const run = drawOn('catalog')
+    expect(await shown(/^Catalog$/)).toBeDefined()
+    run.turn('durable-writes')
+    expect(await shown(/^Durable writes$/)).toBeDefined()
+    await waitFor(() => expect(run.fake.of('read').at(-1)?.args).toEqual(['/work/thesis', 'durable']))
+    run.turn('catalog')
+    expect(await shown(/^Catalog$/)).toBeDefined()
+  })
+
+  test('an epic with no deck leaves the open deck where it is', async () => {
+    const run = drawOn('durable-writes')
+    expect(await shown(/^Durable writes$/)).toBeDefined()
+    run.turn('nothing-here')
+    await pause(10)
+    expect(screen.getByRole('button', { name: /^Durable writes$/ })).toBeDefined()
+    run.turn(null)
+    await pause(10)
+    expect(screen.getByRole('button', { name: /^Durable writes$/ })).toBeDefined()
+  })
+
+  test('a deck picked by hand stays open until the epic changes again', async () => {
+    const run = drawOn('catalog')
+    expect(await shown(/^Catalog$/)).toBeDefined()
+    await pick('Durable writes')
+    expect(await shown(/^Durable writes$/)).toBeDefined()
+
+    /* The host says the same epic again (any context does): that is not a change. */
+    run.turn('catalog')
+    await pause(10)
+    expect(screen.getByRole('button', { name: /^Durable writes$/ })).toBeDefined()
+
+    run.turn('durable-writes')
+    await pick('Catalog, the long one')
+    expect(await shown(/^Catalog, the long one$/)).toBeDefined()
+    run.turn('catalog')
+    expect(await shown(/^Catalog$/)).toBeDefined()
   })
 })
 
