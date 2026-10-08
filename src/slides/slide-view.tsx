@@ -27,6 +27,7 @@ export function SlideView({
   fit = 'contain',
   showSection = false,
   onUnlink,
+  onSection,
   cite = null,
   className,
 }: {
@@ -44,6 +45,8 @@ export function SlideView({
   showSection?: boolean
   /** Given, the section chip carries an × that unlinks the slide. */
   onUnlink?: () => void
+  /** Given, the section chip is a button: pressing it turns the paper to the section. */
+  onSection?: () => void
   className?: string
 }) {
   const box = useRef<HTMLDivElement>(null)
@@ -71,7 +74,7 @@ export function SlideView({
         style={{ width, height: SLIDE_HEIGHT, left, top, transform: `scale(${scale})` }}
       >
         <CiteContext.Provider value={cite}>
-          <SlideFace slide={slide} showSection={showSection} onUnlink={onUnlink} />
+          <SlideFace slide={slide} showSection={showSection} onUnlink={onUnlink} onSection={onSection} />
         </CiteContext.Provider>
       </div>
     </div>
@@ -107,10 +110,12 @@ export const SlideFace = memo(function SlideFace({
   slide,
   showSection = false,
   onUnlink,
+  onSection,
 }: {
   slide: Slide
   showSection?: boolean
   onUnlink?: () => void
+  onSection?: () => void
 }) {
   return (
     <div
@@ -124,7 +129,18 @@ export const SlideFace = memo(function SlideFace({
           title={`${slide.section.path} — ${slide.section.title}`}
           className="bg-muted text-muted-foreground absolute top-6 right-6 flex max-w-[40%] items-center gap-2 rounded-full px-4 py-1.5 text-[20px]"
         >
-          <span className="truncate">§ {slide.section.title}</span>
+          {onSection ? (
+            <button
+              type="button"
+              title={`Show “${slide.section.title}” in the paper`}
+              onClick={onSection}
+              className="hover:text-foreground min-w-0 truncate"
+            >
+              § {slide.section.title}
+            </button>
+          ) : (
+            <span className="truncate">§ {slide.section.title}</span>
+          )}
           {onUnlink ? (
             /* Drawn at slide scale like the chip, so it is large in logical pixels to stay pressable when shrunk. */
             <button

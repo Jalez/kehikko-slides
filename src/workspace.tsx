@@ -14,7 +14,7 @@ import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
-import { absolute, linkedToReading, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
+import { absolute, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
 import { useTalk } from './talk.ts'
@@ -284,6 +284,7 @@ export function Workspace({
                 aspect={deck.aspect}
                 showSection
                 onUnlink={() => edit(null)}
+                onSection={() => slide.section && followed.turn(passageFor(project, slide.section))}
                 cite={cite}
                 className="drop-shadow-sm"
               />
