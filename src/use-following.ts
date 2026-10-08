@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Slide } from '../deck/format.ts'
-import { Follower, readingOf, type Reading } from './follow.ts'
+import { Follower, readingOf, type Reading, type SectionPassage } from './follow.ts'
 import type { Host } from './wire/use-kehikot.ts'
 
 /** How long the slides stay on a slide before the paper is turned to it: a run of key presses turns it once. */
@@ -35,7 +35,7 @@ export function useFollowing({
   presenting: boolean
   goTo(index: number): void
   publishDelay?: number
-}): { reading: Reading | null; missing: string | null; point: (passage: PointedPassage) => void } {
+}): { reading: Reading | null; missing: string | null; point: (passage: PointedPassage) => void; turn: (passage: SectionPassage) => void } {
   const follower = useRef<Follower | null>(null)
   follower.current ??= new Follower()
   const [shown, setShown] = useState<{ reading: Reading | null; missing: string | null }>({ reading: null, missing: null })
@@ -109,7 +109,20 @@ export function useFollowing({
     })
   }, [])
 
-  return { ...shown, point }
+  /* The section chip pressed: turn the paper to the slide's section. Asked for
+     by a person, so it is sent whether or not following is on, and whether or
+     not the paper last said it was there — it may have been scrolled away
+     since without saying anything. */
+  const turn = useCallback((passage: SectionPassage) => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    ;(follower.current as Follower).published(passage)
+    void request.current('passage.set', { passage }).catch(() => {
+      /* Unhosted, or the host said no: nothing else to do. */
+    })
+  }, [])
+
+  return { ...shown, point, turn }
 }
 
 /** A range of a file, as a citation points the paper at it. */

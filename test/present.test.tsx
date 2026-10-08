@@ -158,6 +158,14 @@ describe('linking a slide', () => {
     expect(preview().getByTestId('section-chip').textContent).toContain('Bridging the gap')
     expect(link().disabled).toBe(true)
 
+    /* Pressing the chip turns the paper to the section, though the paper is
+       already said to be there: it may have been scrolled away since. */
+    const before = run.published().length
+    fireEvent.click(preview().getByRole('button', { name: '§ Bridging the gap' }))
+    expect(run.published().slice(before)).toEqual([
+      { passage: { path: '/work/thesis/chapters/2_bridge.tex', page: null, from: null, to: null, quoted: '', section: { title: 'Bridging the gap', from: null, to: null } } },
+    ])
+
     fireEvent.click(preview().getByRole('button', { name: 'unlink from Bridging the gap' }))
     expect(editor().value).not.toContain('section:')
     expect(preview().queryByTestId('section-chip')).toBeNull()
