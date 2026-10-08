@@ -65,7 +65,11 @@ export function CiteMark({ label }: { label: string }) {
         disabled={!found?.at}
         onClick={() => cite.onCite(label)}
         className={cn(
-          'mx-0.5 rounded px-1.5 align-super text-[0.55em] leading-none font-semibold not-italic',
+          'relative mx-0.5 rounded px-1.5 align-super text-[0.62em] leading-none font-semibold not-italic',
+          /* The preview is the slide shrunk to fit its pane, and a marker is
+             then a few pixels across. What is pressed is this, not the ink: a
+             box a line tall and wider than the number, laid over the marker. */
+          "after:absolute after:-inset-x-[0.6em] after:-inset-y-[1.1em] after:content-['']",
           broken
             ? 'bg-destructive/15 text-destructive line-through'
             : found.status === 'ambiguous'
