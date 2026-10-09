@@ -20,10 +20,3 @@ export function routeOf(href: string): Route {
   if (presenter !== null) return { page: 'presenter', slug: presenter, project, theme }
   return { page: 'screen' }
 }
-
-/** A window of its own has no host to say the theme; the address does. */
-export function applyTheme(theme: 'light' | 'dark' | null): void {
-  if (!theme) return
-  document.documentElement.classList.toggle('dark', theme === 'dark')
-  document.documentElement.classList.toggle('light', theme === 'light')
-}
