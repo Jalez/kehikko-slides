@@ -10,10 +10,11 @@ import 'kehikot-module-protocol/client'
 import { App } from './app.tsx'
 import { PresenterView } from './presenter.tsx'
 import { PrintView } from './print.tsx'
-import { applyTheme, routeOf } from './routes.ts'
+import { routeOf } from './routes.ts'
 
+/* A window of its own has no host to say the theme; its address does (`?theme=`), and the page
+   document has already put it on <html> before this runs. */
 const route = routeOf(location.href)
-if (route.page !== 'screen') applyTheme(route.theme)
 
 const root = document.getElementById('root')
 if (root) {

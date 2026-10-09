@@ -113,8 +113,8 @@ export function Screen({
    * so nothing being edited is taken away.
    */
   const server = useServerStanding()
-  const cover: CoverState | null =
-    server === 'stale' ? 'stale' : (coverFor(host) ?? (list && list.length ? null : server === 'down' ? 'down' : !list ? 'loading' : null))
+  const ready: CoverState | null = coverFor({ where: host.where, projectPath: host.projectPath, server })
+  const cover = ready === 'down' && list?.length ? null : (ready ?? (!list ? 'loading' : null))
 
   const items: Item[] = ordered.map((one) => ({ id: one.slug, name: one.title }))
 
