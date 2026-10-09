@@ -71,7 +71,8 @@ export function SlideView({
     >
       <div
         className="absolute origin-top-left"
-        style={{ width, height: SLIDE_HEIGHT, left, top, transform: `scale(${scale})` }}
+        /* `--slide-scale` is for what has to stay pressable when the slide is shrunk: see `CiteMark`. */
+        style={{ width, height: SLIDE_HEIGHT, left, top, transform: `scale(${scale})`, ['--slide-scale' as string]: scale }}
       >
         <CiteContext.Provider value={cite}>
           <SlideFace slide={slide} showSection={showSection} onUnlink={onUnlink} onSection={onSection} />
@@ -134,9 +135,10 @@ export const SlideFace = memo(function SlideFace({
               type="button"
               title={`Show “${slide.section.title}” in the paper`}
               onClick={onSection}
-              className="hover:text-foreground min-w-0 truncate"
+              /* The chip is a few pixels tall in a shrunken preview: what is pressed reaches ten real pixels above and below it. */
+              className="hover:text-foreground relative flex min-w-0 after:absolute after:inset-x-0 after:-inset-y-[calc(10px/var(--slide-scale,1))] after:content-['']"
             >
-              § {slide.section.title}
+              <span className="truncate">§ {slide.section.title}</span>
             </button>
           ) : (
             <span className="truncate">§ {slide.section.title}</span>
@@ -148,7 +150,7 @@ export const SlideFace = memo(function SlideFace({
               aria-label={`unlink from ${slide.section.title}`}
               title="Unlink this slide from the section"
               onClick={onUnlink}
-              className="hover:text-foreground -mr-2 shrink-0 rounded-full px-2 text-[28px] leading-none"
+              className="hover:text-foreground relative -mr-2 shrink-0 rounded-full px-2 text-[28px] leading-none"
             >
               ×
             </button>
