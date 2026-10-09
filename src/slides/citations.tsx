@@ -69,8 +69,12 @@ export function CiteMark({ label }: { label: string }) {
           'relative mx-0.5 rounded px-1.5 align-super text-[0.62em] leading-none font-semibold not-italic',
           /* The preview is the slide shrunk to fit its pane, and a marker is
              then a few pixels across. What is pressed is this, not the ink: a
-             box a line tall and wider than the number, laid over the marker. */
-          "after:absolute after:-inset-x-[0.6em] after:-inset-y-[1.1em] after:content-['']",
+             box a line tall and wider than the number, laid over the marker —
+             and never less than ten real pixels out from it on every side,
+             whatever the slide is shrunk to (`--slide-scale`, from `SlideView`).
+             Measured in a host at a quarter scale, the em-sized box alone was
+             ten pixels by twelve. */
+          "after:absolute after:-inset-x-[max(0.6em,10px/var(--slide-scale,1))] after:-inset-y-[max(1.1em,10px/var(--slide-scale,1))] after:content-['']",
           broken
             ? 'bg-destructive/15 text-destructive line-through'
             : found.status === 'ambiguous'
