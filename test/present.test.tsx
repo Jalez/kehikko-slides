@@ -352,6 +352,7 @@ describe('windows of their own', () => {
     expect(pages).toHaveLength(3)
     expect(pages[0]?.style.width).toBe('1280px')
     expect(pages.map((page) => page.querySelector('h1, h2')?.textContent)).toEqual(['Bridging the gap', 'The problem', 'Results'])
-    expect(document.querySelector('style')?.textContent).toContain('@page { size: 1280px 720px; margin: 0; }')
+    /* Among the document's styles: the protocol's cover keeps one of its own in <head>. */
+    expect([...document.querySelectorAll('style')].map((one) => one.textContent).join('\n')).toContain('@page { size: 1280px 720px; margin: 0; }')
   })
 })

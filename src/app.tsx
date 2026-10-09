@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
+import { Cover, coverFor, useServerStanding, type CoverState } from 'kehikot-module-protocol/client/react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -104,6 +106,16 @@ export function Screen({
     }
   }
 
+  /*
+   * Every not-ready moment is the protocol's one cover, in the order that is true: waiting before
+   * anything has greeted the page, then unhosted, then no project. The server not answering takes
+   * the screen only while there is no list to show — over an open deck it is the alert line above,
+   * so nothing being edited is taken away.
+   */
+  const server = useServerStanding()
+  const cover: CoverState | null =
+    server === 'stale' ? 'stale' : (coverFor(host) ?? (list && list.length ? null : server === 'down' ? 'down' : !list ? 'loading' : null))
+
   const items: Item[] = ordered.map((one) => ({ id: one.slug, name: one.title }))
 
   return (
@@ -150,17 +162,15 @@ export function Screen({
           onUndone={() => setGeneration((n) => n + 1)}
         />
       ) : null}
-      {failed ? (
+      {failed && cover !== 'down' ? (
         <p role="alert" className="text-destructive border-b px-3 py-1 text-xs">
           {failed}
         </p>
       ) : null}
       <main className="@container flex min-h-0 flex-1 flex-col">
-        {!project ? (
-          <Empty>Open a project in the host to make slides for it.</Empty>
-        ) : !list ? (
-          <Empty>Loading decks…</Empty>
-        ) : !open ? (
+        {cover ? (
+          <Cover state={cover} name="Slides" onRetry={() => void refresh()} />
+        ) : !project || !list ? null : !open ? (
           <FirstDeck onCreate={create} />
         ) : (
           <Workspace
@@ -226,11 +236,6 @@ function SaveWord({ state }: { state: SaveState }) {
   )
 }
 
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="text-muted-foreground m-auto max-w-xs p-6 text-center text-xs">{children}</p>
-}
-
-/** No decks in this project yet: name the first one. */
 function FirstDeck({ onCreate }: { onCreate(title: string): Promise<boolean> }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)

@@ -2,7 +2,7 @@
 
 /*
  * shadcn's tokens at shadcn's names, neutral, in two palettes. The host's theme
- * arrives in the context and `use-kehikot.ts` sets `.dark` or `.light` on
+ * arrives in the context and the protocol's `useHost` sets `.dark` or `.light` on
  * <html>; unframed, the system preference decides.
  */
 @custom-variant dark (&:where(.dark, .dark *));

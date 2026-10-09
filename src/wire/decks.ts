@@ -1,3 +1,5 @@
+import { answered, ask, follow } from 'kehikot-module-protocol/client'
+
 import type {
   CitationsReply,
   CitationView,
@@ -18,19 +20,10 @@ import type {
 /**
  * The decks `/api`, as the page calls it — the only file in the page that
  * knows a URL. Everything else takes a `Decks`, so a test hands the screen a
- * fake. Writes carry the ticket printed into the page (see `TICKET` in doors.ts).
+ * fake. The protocol's `ask` carries the ticket printed into the page on every
+ * write, and a failure is thrown as its sentence: the server's own words, "not
+ * answering", or "this page is older than its server" (and then it reloads).
  */
-const TICKET_HEADER = 'x-module-ticket'
-
-function ticket(): string {
-  const text = document.getElementById('ticket')?.textContent ?? '""'
-  try {
-    return String(JSON.parse(text))
-  } catch {
-    return ''
-  }
-}
-
 /** What a save came to: written at a new version, or refused because somebody wrote first. */
 export type SaveResult = { ok: true; version: Version } | { ok: false; conflict: { version: Version; text: string } }
 
@@ -56,94 +49,65 @@ export interface Decks {
   source(project: string, path: string, from: number, to: number): Promise<string>
 }
 
-async function body<T>(response: Response): Promise<T> {
-  const parsed = (await response.json().catch(() => ({}))) as T & { ok?: boolean; error?: string }
-  if (!response.ok || parsed.ok === false) throw new Error(parsed.error ?? `the store answered ${response.status}`)
-  return parsed
-}
-
-function send(method: string, path: string, payload: unknown): Promise<Response> {
-  return fetch(path, {
-    method,
-    headers: { 'content-type': 'application/json', [TICKET_HEADER]: ticket() },
-    body: JSON.stringify(payload),
-  })
-}
-
-const query = (fields: Record<string, string>) => new URLSearchParams(fields).toString()
+const get = async <T>(path: string, query: Record<string, string>) => answered(await ask<T>(path, { query }))
+const send = async <T>(method: string, path: string, body: unknown) => answered(await ask<T>(path, { method, body }))
 
 export const decks: Decks = {
   async list(project) {
-    return (await body<ListDecksReply>(await fetch(`./api/decks?${query({ project })}`))).decks
+    return (await get<ListDecksReply>('./api/decks', { project })).decks
   },
   async read(project, slug) {
-    const reply = await body<ReadDeckReply>(await fetch(`./api/deck?${query({ project, slug })}`))
+    const reply = await get<ReadDeckReply>('./api/deck', { project, slug })
     return { text: reply.text, version: reply.version }
   },
   async save(project, slug, text, base) {
-    const response = await send('PUT', './api/deck', base === undefined ? { project, slug, text } : { project, slug, text, base })
-    if (response.status === 409) {
-      const conflict = (await response.json()) as ConflictReply
-      /* Null on both sides means the deck was deleted while this was being
-         typed: not a version to reconcile with, so it is a failure with the
-         server's sentence. */
+    const saved = await ask<WriteDeckReply>('./api/deck', {
+      method: 'PUT',
+      body: base === undefined ? { project, slug, text } : { project, slug, text, base },
+    })
+    if (!saved.ok && saved.status === 409) {
+      const conflict = saved.body as ConflictReply
       if (conflict.version === null || conflict.text === null) {
         throw new Error(conflict.error || 'This deck was deleted while it was being edited.')
       }
       return { ok: false, conflict: { version: conflict.version, text: conflict.text } }
     }
-    return { ok: true, version: (await body<WriteDeckReply>(response)).version }
+    return { ok: true, version: answered(saved).version }
   },
   async create(project, title, epic) {
     const payload = epic ? { project, title, epic } : { project, title }
-    return (await body<CreateDeckReply>(await send('POST', './api/decks', payload))).slug
+    return (await send<CreateDeckReply>('POST', './api/decks', payload)).slug
   },
   async retitle(project, slug, title) {
-    await body(await send('PATCH', './api/deck', { project, slug, title }))
+    await send('PATCH', './api/deck', { project, slug, title })
   },
   async remove(project, slug) {
-    await body(await send('DELETE', './api/deck', { project, slug }))
+    await send('DELETE', './api/deck', { project, slug })
   },
   async history(project, slug) {
-    return (await body<HistoryReply>(await fetch(`./api/history?${query({ project, slug })}`))).entries
+    return (await get<HistoryReply>('./api/history', { project, slug })).entries
   },
   async undo(project, slug, id) {
-    await body(await send('POST', './api/undo', { project, slug, id }))
+    await send('POST', './api/undo', { project, slug, id })
   },
+  /* `follow` reconnects by itself, including after the server restarts. */
   watch(project, onChange) {
-    if (typeof EventSource === 'undefined') return () => {}
-    const source = new EventSource(`./api/watch?${query({ project })}`)
-    source.onmessage = (message) => {
-      try {
-        const event = JSON.parse(String(message.data)) as WatchEvent
-        if (event && typeof event.slug === 'string') onChange(event)
-      } catch {
-        /* a keep-alive or a line we do not read */
-      }
-    }
-    return () => source.close()
+    return follow<WatchEvent>('./api/watch', (event) => event && typeof event.slug === 'string' && onChange(event), {
+      query: { project },
+    })
   },
   async present(project, slug, index, blank) {
-    await body(await send('POST', './api/present', { project, slug, index, blank }))
+    await send('POST', './api/present', { project, slug, index, blank })
   },
   followTalk(project, slug, onState) {
-    if (typeof EventSource === 'undefined') return () => {}
-    const source = new EventSource(`./api/present?${query({ project, slug })}`)
-    source.onmessage = (message) => {
-      try {
-        const state = JSON.parse(String(message.data)) as PresentState
-        if (state && typeof state.index === 'number') onState(state)
-      } catch {
-        /* a keep-alive or a line we do not read */
-      }
-    }
-    return () => source.close()
+    return follow<PresentState>('./api/present', (state) => state && typeof state.index === 'number' && onState(state), {
+      query: { project, slug },
+    })
   },
   async citations(project, slug) {
-    return (await body<CitationsReply>(await fetch(`./api/citations?${query({ project, slug })}`))).slides
+    return (await get<CitationsReply>('./api/citations', { project, slug })).slides
   },
   async source(project, path, from, to) {
-    const fields = { project, path, from: String(from), to: String(to) }
-    return (await body<SourceReply>(await fetch(`./api/source?${query(fields)}`))).text
+    return (await get<SourceReply>('./api/source', { project, path, from: String(from), to: String(to) })).text
   },
 }

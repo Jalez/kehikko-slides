@@ -2,7 +2,9 @@ import { isAbsolute, relative } from 'node:path'
 
 import { KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
 
-import { PATHS, TICKET_HEADER as HEADER, type DeckChange, type PresentState } from './deck/api.ts'
+import { establishBuild, mintTicket, refuseTicket, type Reply } from 'kehikot-module-protocol/serve'
+
+import { PATHS, type DeckChange, type PresentState } from './deck/api.ts'
 import { addCitation } from './deck/cite.ts'
 import {
   deckProblems,
@@ -38,29 +40,26 @@ import {
 /**
  * Every door but the page, as pure functions: `answer` takes a request and
  * returns a status and a body, or `null` for "not ours, let Vite have it";
- * `stream` opens the two server-sent-event doors. `vite.config.ts` is the only
+ * `stream` opens the two server-sent-event doors. `doors()` in `vite.config.ts` is the only
  * thing that touches a socket, which is what lets the tests call these directly.
  */
 
 /**
  * The ticket a page write has to carry.
  *
- * Minted per process and printed into `/app` (see `page/document.ts`), so only
+ * Minted per process and printed into `/app` by `doors()`, so only
  * this app's own page holds it. Loopback is a fence around the machine, not
  * around the programs on it: without this, anything that found the port could
  * write. Reads are ungated, and `/mcp` is ungated because an agent has no page
  * to have been handed a ticket by.
  */
-export const TICKET = crypto.randomUUID()
+export const TICKET = mintTicket()
 
-/** The header the page sends the ticket in. */
-export const TICKET_HEADER = HEADER
+/** What this process is built from and when it started; `doors()` says it wherever a build is said. */
+export const BUILD = establishBuild({ version: VERSION, dir: import.meta.dirname })
 
-export interface Reply {
-  status: number
-  /** `null` means "answer with no body", which is what a notification gets. */
-  body: unknown
-}
+export type { Reply }
+
 
 const ok = (body: Record<string, unknown> = {}): Reply => ({ status: 200, body: { ok: true, ...body } })
 const bad = (why: string, status = 400): Reply => ({ status, body: { ok: false, error: why } })
@@ -499,7 +498,9 @@ export function answer(
   if (!path.startsWith('/api/')) return null
 
   if (WRITES.has(method)) {
-    if (ticket !== TICKET) return bad('That press did not come from this app’s own page.', 403)
+    /* Marked as a ticket refusal, so a page older than this server knows to reload itself. */
+    const refused = refuseTicket(ticket, TICKET, 'That press did not come from this app’s own page.')
+    if (refused) return refused
     if (!body) return bad('That was not a request: a write sends a JSON object.')
   }
   const project = method === 'GET' ? query.get('project') : field(body, 'project')
