@@ -9,9 +9,6 @@
 
 import type { CitationView } from 'kehikot-module-protocol'
 
-/** The header a write carries the page's ticket in. Reads are not gated. */
-export const TICKET_HEADER = 'x-module-ticket'
-
 /** What a deck's file name may be: `<slug>.md` under `.kehikot/slides/`. */
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,79}$/
 

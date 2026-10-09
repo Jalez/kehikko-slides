@@ -11,7 +11,7 @@ describe('empty states', () => {
   test('with no project it says so and asks the store nothing', () => {
     const fake = fakeDecks()
     draw(fake, { projectPath: null, project: null })
-    expect(screen.getByText(/Open a project/)).toBeDefined()
+    expect(screen.getByText(/No project is open/)).toBeDefined()
     expect(fake.calls).toEqual([])
   })
 
@@ -27,7 +27,16 @@ describe('empty states', () => {
   test('says it is loading until the list arrives', () => {
     const fake = fakeDecks({ list: () => new Promise(() => {}) })
     draw(fake)
-    expect(screen.getByText(/Loading decks/)).toBeDefined()
+    expect(document.querySelector('[data-cover]')?.getAttribute('data-cover')).toBe('loading')
+  })
+
+  test('before a host has greeted the page it is waiting, not "no project"; then unhosted, or no project', () => {
+    const none = { project: null, projectPath: null, epic: null }
+    for (const [where, state] of [['listening', 'waiting'], ['unhosted', 'unhosted'], ['hosted', 'no-project']] as const) {
+      const { unmount } = draw(fakeDecks(), { ...none, where })
+      expect(document.querySelector('[data-cover]')?.getAttribute('data-cover')).toBe(state)
+      unmount()
+    }
   })
 })
 
