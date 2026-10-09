@@ -2,6 +2,9 @@ import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+import { FOCUS_WHERE } from 'kehikot-module-protocol'
+import { useFocus } from 'kehikot-module-protocol/client/react'
+
 import { Button } from '@/components/ui/button'
 import type { Editor } from '@/editor/deck-editor'
 import { cn } from '@/lib/utils'
@@ -14,7 +17,7 @@ import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
-import { absolute, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
+import { absolute, anchorsOf, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
 import { useTalk } from './talk.ts'
@@ -157,6 +160,19 @@ export function Workspace({
     }
   }
 
+  /*
+   * The parts of the epic ticked in the host's bar. A deck is an ordered thing
+   * a person edits and presents, so nothing is taken out of it: the slides
+   * outside the ticked parts are set back in the list, and one line says how
+   * many. The text, the slide on screen, presenting and print are untouched.
+   */
+  const focus = useFocus(host)
+  const outside = useMemo(
+    () => deck.slides.map((one) => !focus.inFocus(anchorsOf(one, project))),
+    [deck.slides, focus, project],
+  )
+  const beside = outside.filter(Boolean).length
+  const focusSaid = focus.narrow(deck.slides, (one) => anchorsOf(one, project), { noun: 'slide' }).sentence
   const reading = readingOf(host.passage)
   const edit = (section: SectionLink | null) => {
     const next = setSection(text, current, section)
@@ -234,6 +250,12 @@ export function Workspace({
         ))}
       </div>
 
+      {focusSaid ? (
+        <p role="status" data-testid="focus" title={FOCUS_WHERE} className="text-muted-foreground border-b px-3 py-1 text-[11px]">
+          {focusSaid}
+          {beside ? ` Set back in the list, not removed${outside[current] ? '; the slide on screen is one of them' : ''}.` : null}
+        </p>
+      ) : null}
       <div className="flex min-h-0 flex-1">
         <nav
           aria-label="slides"
@@ -245,8 +267,13 @@ export function Workspace({
               type="button"
               aria-label={`slide ${index + 1}`}
               aria-current={index === current ? 'true' : undefined}
+              data-outside={outside[index] ? '' : undefined}
+              title={outside[index] ? 'Outside the picked parts' : undefined}
               onClick={() => goTo(index)}
-              className="group flex items-start gap-1.5 text-left outline-none"
+              className={cn(
+                'group flex items-start gap-1.5 text-left outline-none transition-opacity',
+                outside[index] && 'opacity-35 hover:opacity-70 focus-visible:opacity-70',
+              )}
             >
               <span className="text-muted-foreground w-4 shrink-0 pt-0.5 text-right text-[10px] tabular-nums">
                 {index + 1}

@@ -45,7 +45,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   extensions: { emits: [], consumes: [] },
   /* A description, not a request: the deck moves to the slides for the section
      the paper is on — what the host draws as "follows a passage". */
-  reacts: ['passage'],
+  reacts: ['passage', 'parts'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
     uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep'],

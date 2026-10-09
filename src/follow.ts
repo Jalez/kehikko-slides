@@ -1,3 +1,5 @@
+import type { Anchor } from 'kehikot-module-protocol'
+
 import type { SectionLink, Slide } from '../deck/format.ts'
 
 /**
@@ -66,6 +68,17 @@ export function readingOf(passage: PassageLike | null | undefined): Reading | nu
 export function linkedToReading(slide: Slide | undefined, project: string, reading: Reading): boolean {
   const section = slide?.section
   return !!section && section.title === reading.title && samePath(absolute(project, section.path), reading.path)
+}
+
+/**
+ * What ties a slide to the parts of the epic: the file of the section it is
+ * linked to, and the file of each passage it cites. Several, so a slide is in
+ * a ticked part when any one of them is; a slide with neither belongs to the
+ * deck as a whole and is in no part.
+ */
+export function anchorsOf(slide: Slide, project: string): Anchor[] {
+  const files = [...(slide.section ? [slide.section.path] : []), ...slide.sources.map((source) => source.path)]
+  return files.map((path) => ({ file: absolute(project, path) }))
 }
 
 /** The passage that turns the paper to a slide's section. */

@@ -17,6 +17,7 @@ export function host(over: Partial<Host> = {}): Host {
     epic: 'write-chapter-two',
     theme: 'dark',
     passage: null,
+    parts: [],
     request: () => Promise.resolve(null),
     ...over,
   }

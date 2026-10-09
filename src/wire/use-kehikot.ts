@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 
+import type { EpicPart } from 'kehikot-module-protocol'
 import { useKehikot as useProtocolKehikot, type Kehikot, type Where } from 'kehikot-module-protocol/client/react'
 
 import type { PassageLike } from '../follow.ts'
@@ -27,9 +28,13 @@ export interface Host {
    * nobody is pointing anywhere.
    */
   passage: PassageLike | null
+  /** `context.parts`: the open epic's parts, the ones ticked in the host's bar flagged. Empty is the whole epic. */
+  parts: readonly EpicPart[]
   /** Ask the host for something (a method from the protocol). Rejects when unhosted. */
   request: Kehikot['request']
 }
+
+const NO_PARTS: readonly EpicPart[] = []
 
 export function useKehikot(): Host {
   const kehikot = useProtocolKehikot(ID)
@@ -51,6 +56,7 @@ export function useKehikot(): Host {
       epic: context?.epic ?? null,
       theme,
       passage: context?.passage ?? null,
+      parts: context?.parts ?? NO_PARTS,
       request: kehikot.request,
     }),
     [kehikot.where, kehikot.request, context, theme],
