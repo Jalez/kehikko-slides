@@ -1,91 +1,16 @@
-import { parseSlide, replaceSlide, serialiseSlide, slideRanges, uncitable, type Source } from './format.ts'
+import { normaliseQuote, uncitable } from 'kehikot-module-protocol'
+
+import { parseSlide, replaceSlide, serialiseSlide, slideRanges } from './format.ts'
 
 /**
- * Citations: which exact words of which file a slide rests on, found again.
+ * Citing: putting a source line and its marker on a slide.
  *
- * A source is written down as its words (see format.ts), and this is where
- * the words are looked for. Pure functions over strings, like format.ts: the
- * store reads the file and hands its text in, so every rule here is a unit test
- * and the page and the server share one spelling of "found".
- *
- * ## Why whitespace is not significant, and nothing else is forgiven
- *
- * A paper's source wraps its sentences wherever its editor did, and a quote on
- * a slide is one line. So a run of whitespace in the quote matches any run of
- * whitespace in the file, and that is the only latitude. Forgiving more — case,
- * punctuation, LaTeX markup — would let a quote match words the paper no longer
- * says, which is the one failure a citation exists to make visible.
- *
- * ## The four answers
- *
- * - `holds`: the words are in the file exactly once. The range is where.
- * - `ambiguous`: they are in it more than once. The range is the first, and the
- *   fix is a longer quote; a citation that could mean two places means neither.
- * - `adrift`: they are not in it. The paper changed under the slide.
- * - `unreadable`: the file is not there, or not inside the project.
+ * What a citation IS — the line, the markers, finding the words again and the
+ * four answers (`holds`, `ambiguous`, `adrift`, `unreadable`) — is
+ * `kehikot-module-protocol`'s, shared with every module that cites. What is
+ * here is the part only a deck has: where on a slide the marker goes. Pure
+ * functions over strings, like format.ts.
  */
-
-export type CiteStatus = 'holds' | 'ambiguous' | 'adrift' | 'unreadable'
-
-/** Where a quote was found: UTF-8 byte offsets (what a passage carries) and 1-based lines. */
-export interface Found {
-  from: number
-  to: number
-  line: number
-  endLine: number
-}
-
-export interface Resolved extends Source {
-  status: CiteStatus
-  /** Null unless the words were found. */
-  at: Found | null
-  /** How many times the words occur in the file. */
-  count: number
-}
-
-/** A quote's words as they are compared: one space between runs, no ends. */
-export function normaliseQuote(quote: string): string {
-  return quote.replace(/\s+/g, ' ').trim()
-}
-
-const escape = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const encoder = new TextEncoder()
-const bytes = (text: string) => encoder.encode(text).length
-
-function lineOf(text: string, at: number): number {
-  let line = 1
-  for (let i = text.indexOf('\n'); i !== -1 && i < at; i = text.indexOf('\n', i + 1)) line++
-  return line
-}
-
-/** Where `quote` is in `file`, and how many times. */
-export function findQuote(file: string, quote: string): { count: number; at: Found | null } {
-  const words = normaliseQuote(quote).split(' ').filter(Boolean)
-  if (!words.length) return { count: 0, at: null }
-  const pattern = new RegExp(words.map(escape).join('\\s+'), 'g')
-  let count = 0
-  let at: Found | null = null
-  for (const match of file.matchAll(pattern)) {
-    count++
-    if (at) continue
-    const start = match.index
-    const end = start + match[0].length
-    at = { from: bytes(file.slice(0, start)), to: bytes(file.slice(0, end)), line: lineOf(file, start), endLine: lineOf(file, end - 1) }
-  }
-  return { count, at }
-}
-
-/** A source, looked for in its file's text (null: the file could not be read). */
-export function resolveSource(source: Source, file: string | null): Resolved {
-  if (file === null) return { ...source, status: 'unreadable', at: null, count: 0 }
-  const { count, at } = findQuote(file, source.quote)
-  return { ...source, status: count === 0 ? 'adrift' : count === 1 ? 'holds' : 'ambiguous', at, count }
-}
-
-/** "lines 31–33" or "line 31". */
-export function linesOf(at: Found): string {
-  return at.line === at.endLine ? `line ${at.line}` : `lines ${at.line}–${at.endLine}`
-}
 
 /** Where on a slide the marker goes: after some exact words of its body, at the end of the caret's line, or nowhere (the slide as a whole). */
 export type Place = { after: string } | { caret: number } | { whole: true }

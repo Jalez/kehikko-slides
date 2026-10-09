@@ -1,9 +1,10 @@
+import { linesOf, replaceMarkers } from 'kehikot-module-protocol'
 import { createContext, useContext } from 'react'
 
 import { cn } from '@/lib/utils'
 
 import type { CitationView } from '../../deck/api.ts'
-import { replaceMarkers } from '../../deck/format.ts'
+import { IN_BODY } from '../../deck/format.ts'
 
 /**
  * A slide's citation markers, as the page draws them.
@@ -34,13 +35,13 @@ export const CITE_HREF = '#cite-'
 
 /** A body ready for the renderer: markers as links where they are drawn, gone where they are not. */
 export function withMarkers(body: string, drawn: boolean): string {
-  return replaceMarkers(body, (label) => (drawn ? `[${label}](${CITE_HREF}${label})` : ''))
+  return replaceMarkers(body, (label) => (drawn ? `[${label}](${CITE_HREF}${label})` : ''), IN_BODY)
 }
 
 /** What a marker says when hovered. */
 export function citeTitle(label: string, found: CitationView | undefined): string {
   if (!found) return `[^${label}] has no source under Sources:`
-  const where = found.at ? `${found.path}, ${found.at.line === found.at.endLine ? `line ${found.at.line}` : `lines ${found.at.line}–${found.at.endLine}`}` : found.path
+  const where = found.at ? `${found.path}, ${linesOf(found.at)}` : found.path
   const quote = `“${found.quote.length > 160 ? `${found.quote.slice(0, 157)}…` : found.quote}”`
   if (found.status === 'holds') return `${where}\n${quote}\nPress to show it in the paper.`
   if (found.status === 'ambiguous') return `${where} — these words occur ${found.count} times; quote more.\n${quote}`

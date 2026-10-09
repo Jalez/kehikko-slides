@@ -1,9 +1,9 @@
 import { isAbsolute, relative } from 'node:path'
 
-import { KEHIKOT_DIR } from 'kehikot-module-protocol'
+import { KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
 
 import { PATHS, TICKET_HEADER as HEADER, type DeckChange, type PresentState } from './deck/api.ts'
-import { addCitation, linesOf, resolveSource, type Resolved } from './deck/cite.ts'
+import { addCitation } from './deck/cite.ts'
 import {
   deckProblems,
   parseDeck,
@@ -272,7 +272,7 @@ function checked(text: string): void {
 }
 
 /** One citation as read_deck lists it. */
-function citationLine(one: Resolved): string {
+function citationLine(one: CitationView): string {
   const where = one.at ? `${one.path} ${linesOf(one.at)}` : one.path
   const said = one.quote.length > 90 ? `${one.quote.slice(0, 87)}…` : one.quote
   if (one.status === 'holds') return `     [^${one.label}] ${where}: "${said}"`

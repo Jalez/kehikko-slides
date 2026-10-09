@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 
-import { addCitation, findQuote, linesOf, resolveSource } from '../deck/cite.ts'
-import { deckProblems, markersIn, parseDeck, parseSlide, replaceMarkers, serialiseSlide } from '../deck/format.ts'
+import { addCitation } from '../deck/cite.ts'
+import { deckProblems, parseDeck, parseSlide, serialiseSlide } from '../deck/format.ts'
+import { withMarkers } from '../src/slides/citations.tsx'
 
 const SLIDE = `<!-- section: chapters/4.tex | Results -->
 # RQ1
@@ -55,44 +56,17 @@ describe('the Sources block', () => {
   })
 })
 
-describe('markers', () => {
-  test('are found outside code only', () => {
-    expect(markersIn('a[^1] `b[^2]` c[^3][^1]\n```\nd[^4]\n```')).toEqual(['1', '3'])
+/* The line, the markers and finding a quote are `kehikot-module-protocol`'s,
+   and tested there (`test/citations.test.ts`). What is a deck's own is that a
+   slide's body is Markdown, so a marker inside code is code. */
+describe('markers on a slide', () => {
+  test('one written inside code is not a citation: it needs no source', () => {
+    expect(deckProblems('a[^1] `b[^2]`\n```\nd[^4]\n```\nSources:\n[^1]: a.tex | "one"')).toEqual([])
   })
 
-  test('can be replaced, leaving code alone', () => {
-    expect(replaceMarkers('a[^1] `b[^2]`', (l) => `<${l}>`)).toBe('a<1> `b[^2]`')
-  })
-})
-
-const FILE = 'Intro.\n\nThe mean rating was highest after the\nvanilla-JavaScript module (3.51). It fell — after React.\nThe end. The end.\n'
-
-describe('finding a quote', () => {
-  test('across a line break, as UTF-8 byte offsets, with its lines', () => {
-    const { count, at } = findQuote(FILE, 'The mean rating was highest after the vanilla-JavaScript module (3.51).')
-    expect(count).toBe(1)
-    expect(at).toEqual({ from: 8, to: 79, line: 3, endLine: 4 })
-    expect(linesOf(at!)).toBe('lines 3–4')
-  })
-
-  test('counts bytes, not characters, after a multi-byte character', () => {
-    const at = findQuote(FILE, 'after React.').at!
-    const before = FILE.slice(0, FILE.indexOf('after React.'))
-    expect(at.from).toBe(new TextEncoder().encode(before).length)
-    expect(at.from).toBe(FILE.indexOf('after React.') + 2)
-  })
-
-  test('holds, ambiguous, adrift, unreadable', () => {
-    const source = (quote: string) => ({ label: '1', path: 'a.tex', quote })
-    expect(resolveSource(source('It fell'), FILE).status).toBe('holds')
-    expect(resolveSource(source('The end.'), FILE)).toMatchObject({ status: 'ambiguous', count: 2 })
-    expect(resolveSource(source('It rose'), FILE)).toMatchObject({ status: 'adrift', at: null })
-    expect(resolveSource(source('It fell'), null).status).toBe('unreadable')
-  })
-
-  test('regular-expression characters in a quote are words', () => {
-    expect(findQuote('a (3.51) b', '(3.51)').count).toBe(1)
-    expect(findQuote('a 3x51 b', '3.51').count).toBe(0)
+  test('and is drawn as the code it is, where the others become links or are taken out', () => {
+    expect(withMarkers('a[^1] `b[^2]`', true)).toBe('a[1](#cite-1) `b[^2]`')
+    expect(withMarkers('a[^1] `b[^2]`', false)).toBe('a `b[^2]`')
   })
 })
 

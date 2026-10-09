@@ -12,10 +12,9 @@ import {
 } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 
-import { kehikotDir, moduleDir, within } from 'kehikot-module-protocol'
+import { kehikotDir, moduleDir, resolveSource, within, type CitationView } from 'kehikot-module-protocol'
 
 import { HISTORY_PER_DECK, MAX_DECK_CHARS, SLUG, type DeckFile, type DeckSummary, type HistoryEntry } from './deck/api.ts'
-import { resolveSource, type Resolved } from './deck/cite.ts'
 import { emptySlide, parseDeck, retitle, serialiseDeck, slugFor } from './deck/format.ts'
 import { ID } from './manifest.ts'
 
@@ -238,7 +237,7 @@ export function citedSlice(project: string | null | undefined, path: string, fro
 }
 
 /** Every slide's sources, each looked for in its file. Indexed like the slides. */
-export function citations(project: string | null | undefined, slug: string): Result<Resolved[][]> {
+export function citations(project: string | null | undefined, slug: string): Result<CitationView[][]> {
   const root = projectRoot(project)
   if (!root.ok) return root
   const deck = readDeck(root.value, slug)

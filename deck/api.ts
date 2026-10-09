@@ -7,6 +7,8 @@
  * is a sentence a person can read.
  */
 
+import type { CitationView } from 'kehikot-module-protocol'
+
 /** The header a write carries the page's ticket in. Reads are not gated. */
 export const TICKET_HEADER = 'x-module-ticket'
 
@@ -169,16 +171,8 @@ export interface PresentMove {
   blank?: boolean
 }
 
-/** One source of one slide, as the store found it (see `deck/cite.ts`). */
-export interface CitationView {
-  label: string
-  path: string
-  quote: string
-  status: 'holds' | 'ambiguous' | 'adrift' | 'unreadable'
-  /** Byte offsets and 1-based lines, when the words were found. */
-  at: { from: number; to: number; line: number; endLine: number } | null
-  count: number
-}
+/** One source of one slide, as the store found it: the protocol's view of a citation. */
+export type { CitationView }
 
 export interface CitationsReply {
   ok: true
