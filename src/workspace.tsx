@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { FOCUS_WHERE } from 'kehikot-module-protocol'
@@ -73,7 +73,18 @@ export function Workspace({
   const [jump, setJump] = useState<{ at: number; nonce: number } | null>(null)
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')
 
-  useEffect(() => onState(doc.state), [doc.state, onState])
+  /*
+   * The header's save word is the parent's copy of `doc.state`, and it has to land in the SAME
+   * paint as everything here that is drawn from `doc` itself — the notice above all.
+   *
+   * A passive effect runs after the browser has painted, so with `useEffect` there was a frame in
+   * which this pane said "This deck was changed elsewhere before your edits were saved." under a
+   * header still saying "editing": two answers to "is my work saved". (A refused save goes
+   * `unsaved` → `conflict` in one commit when the store answers within a tick, so the stale word
+   * was "editing", not "saving…".) A layout effect's update is flushed before the paint, and
+   * before anything observing the document is told it changed.
+   */
+  useLayoutEffect(() => onState(doc.state), [doc.state, onState])
 
   /* Parsing is cheap; rendering every thumbnail is not. The panes draw from a
      deferred copy so typing never waits on them. */
