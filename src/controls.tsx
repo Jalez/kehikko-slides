@@ -25,10 +25,17 @@ export function Hint({ text, children }: { text: string; children: ReactNode }) 
 }
 
 /** The words on the following toggle: what it is doing, or why it is not moving the slides. */
-export function followingLabel(on: boolean, presenting: boolean, missing: string | null): string {
+export function followingLabel(
+  on: boolean,
+  presenting: boolean,
+  missing: string | null,
+  aside: { title: string; slide: number } | null = null,
+): string {
   if (!on) return 'Not following'
   if (presenting) return 'Paused while presenting'
   if (missing) return `No slides for ${missing}`
+  /* The paper is on a section whose slide is not drawn under the picked parts: said here, not jumped to. */
+  if (aside) return `Slide ${aside.slide + 1}, for ${aside.title}, is outside the picked parts`
   return 'Following the paper'
 }
 
@@ -49,6 +56,7 @@ export function HeaderControls({
   presenting,
   reading,
   missing,
+  aside,
   onToggleFollowing,
   onPresent,
   onPresenterView,
@@ -59,6 +67,7 @@ export function HeaderControls({
   presenting: boolean
   reading: Reading | null
   missing: string | null
+  aside?: { title: string; slide: number } | null
   onToggleFollowing(): void
   onPresent(): void
   onPresenterView(): void
@@ -79,6 +88,7 @@ export function HeaderControls({
           presenting={presenting}
           reading={reading}
           missing={missing}
+          aside={aside ?? null}
           onToggle={onToggleFollowing}
         />
         <Hint text={PRESENTER_HINT}>
@@ -135,17 +145,19 @@ export function FollowingToggle({
   presenting,
   reading,
   missing,
+  aside = null,
   onToggle,
 }: {
   on: boolean
   presenting: boolean
   reading: Reading | null
   missing: string | null
+  aside?: { title: string; slide: number } | null
   onToggle(): void
 }) {
   const where = reading ? `The paper is on “${reading.title}”.` : 'The paper is not on a section.'
   const what = on ? 'Press to stop following it.' : 'Press to follow it again.'
-  const label = followingLabel(on, presenting, missing)
+  const label = followingLabel(on, presenting, missing, aside)
   return (
     <Hint text={`${label}. ${where} ${what}`}>
       <Button

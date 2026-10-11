@@ -103,6 +103,12 @@ export interface Situation {
   /** The slide on screen now. */
   current: number
   project: string
+  /**
+   * Which slides may be gone to: the ones shown under the picked parts.
+   * Absent is every slide. A section whose only slides are not allowed is not
+   * followed — see `aside`.
+   */
+  allowed?: (index: number) => boolean
 }
 
 /**
@@ -126,6 +132,12 @@ export class Follower {
   missing: string | null = null
   /** The section the paper is on, for the indicator's hint. */
   reading: Reading | null = null
+  /**
+   * The section the paper is on whose slide is not among the shown ones — it
+   * is outside the picked parts — with that slide's index. Following does not
+   * jump to a slide that is not drawn; the indicator says where it is.
+   */
+  aside: { title: string; slide: number } | null = null
 
   constructor(private now: () => number = Date.now) {}
 
@@ -143,6 +155,7 @@ export class Follower {
     const key = reading ? keyOf(reading) : null
     if (key === this.seen) return null
     this.reading = reading
+    this.aside = null
     if (this.now() < this.quietUntil) {
       this.seen = key
       this.missing = null
@@ -166,12 +179,17 @@ export class Follower {
       this.missing = null
       return null
     }
-    const first = at.slides.findIndex((slide) => linkedToReading(slide, at.project, reading))
-    if (first < 0) {
+    const linked = at.slides.map((slide, index) => (linkedToReading(slide, at.project, reading) ? index : -1)).filter((index) => index >= 0)
+    if (linked.length === 0) {
       this.missing = reading.title
       return null
     }
     this.missing = null
+    const first = linked.find((index) => at.allowed?.(index) ?? true)
+    if (first === undefined) {
+      this.aside = { title: reading.title, slide: linked[0]! }
+      return null
+    }
     this.steering = first
     return first
   }
@@ -182,6 +200,7 @@ export class Follower {
    * or the paper is already on it.
    */
   moved(index: number, at: Situation, publishing: boolean): SectionPassage | null {
+    this.aside = null
     const steered = this.steering === index
     this.steering = null
     if (steered || !publishing) return null
@@ -193,6 +212,16 @@ export class Follower {
     /* Already sent and not yet said back: sending it again is the same request twice. */
     if (key === this.sent && this.now() - this.sentAt < ECHO_GRACE_MS) return null
     return passage
+  }
+
+  /**
+   * The deck is about to be moved to `index` by something that is not the
+   * person stepping — a change of the picked parts put the slide on screen
+   * aside. Like a move following made, it is not published: nobody chose that
+   * slide, and the paper has its own answer to the same tick.
+   */
+  steer(index: number): void {
+    this.steering = index
   }
 
   /**

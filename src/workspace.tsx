@@ -2,7 +2,6 @@ import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-import { FOCUS_WHERE } from 'kehikot-module-protocol'
 import { useFocus } from 'kehikot-module-protocol/client/react'
 
 import { Button } from '@/components/ui/button'
@@ -17,7 +16,9 @@ import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
-import { absolute, anchorsOf, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
+import { absolute, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
+import { anchorsOf as anchorsOfSlide } from './follow.ts'
+import { emptySaid, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
 import { useTalk } from './talk.ts'
@@ -91,7 +92,25 @@ export function Workspace({
   const shown = useDeferredValue(text)
   const deck = useMemo<Deck>(() => parseDeck(shown, slug), [shown, slug])
   const current = Math.min(slideAt(text, caret), deck.slides.length - 1)
-  const slide = deck.slides[current] ?? deck.slides[0]
+
+  /*
+   * The parts of the epic ticked in the host's bar: the deck narrows to their
+   * slides, as the paper narrows to their pages. `focus.ts` has the rule and
+   * what is deliberately left whole (the Markdown, print, the presenter's
+   * window). `held` is a slide outside the pick that the person is in — the
+   * caret was put in it in the Markdown, or it has typing that is not saved —
+   * and stays drawn until they leave it.
+   */
+  const focus = useFocus(host)
+  const [held, setHeld] = useState<number | null>(null)
+  const narrowing = useMemo(
+    () => narrowDeck(focus.parts, deck.slides, project, host.epic ?? null, held === current ? held : null),
+    [focus.parts, deck.slides, project, host.epic, held, current],
+  )
+  const { shown: listed } = narrowing
+  /* The slide in front, as an index into the deck: null when the pick leaves this one out and nothing holds it. */
+  const front = !narrowing.focused || listed.includes(current) ? current : null
+  const slide = front === null ? undefined : (deck.slides[front] ?? deck.slides[0])
 
   const goTo = (index: number) => {
     const range = slideRanges(text)[index]
@@ -101,8 +120,18 @@ export function Workspace({
     setJump((was) => ({ at, nonce: (was?.nonce ?? 0) + 1 }))
   }
 
+  /* Presenting follows the narrowing: a person rehearsing one chapter presents that chapter. The keys step
+     through the shown slides, by their place among them. */
   const stage = useRef<HTMLDivElement>(null)
-  const show = usePresenting({ stage, index: current, count: deck.slides.length, goTo })
+  const show = usePresenting({
+    stage,
+    index: Math.max(0, front === null ? 0 : listed.indexOf(front)),
+    count: listed.length,
+    goTo: (place) => {
+      const to = listed[place]
+      if (to !== undefined) goTo(to)
+    },
+  })
   const [following, setFollowing] = useState(true)
   const followed = useFollowing({
     host,
@@ -117,7 +146,53 @@ export function Workspace({
     presenting: show.presenting !== null,
     goTo,
     publishDelay,
+    /* Following goes only to slides that are drawn, and stepping turns the paper only to a section inside the pick:
+       a slide shown for what it cites may be linked to a section of another part's file. */
+    allowed: narrowing.focused ? (index) => listed.includes(index) : undefined,
+    turns: narrowing.focused
+      ? (index) => {
+          const section = deck.slides[index]?.section
+          return !!section && focus.inFocus({ file: absolute(project, section.path) })
+        }
+      : undefined,
   })
+
+  /* The ticks changed, or nothing is in front. A slide the person is in the middle of typing in is held though the
+     new pick leaves it out; any other is let go, and the deck goes to the shown slide nearest it. Not published as a
+     move — nobody chose that slide, and the paper answers the same tick itself (`steer`). Before the paint, so the
+     old slide is never drawn under the new pick. */
+  const ticks = focus.parts.filter((part) => part.picked).map((part) => part.id).join('\n')
+  const ticked = useRef(ticks)
+  const ready = doc.text !== null && shown === text
+  const { steer } = followed
+  useLayoutEffect(() => {
+    if (ticked.current !== ticks) {
+      ticked.current = ticks
+      const typing = doc.state === 'unsaved' || doc.state === 'saving' || doc.state === 'conflict'
+      const hold = typing && narrowing.focused && front === null
+      setHeld(hold ? current : null)
+      if (hold) return
+    }
+    if (!ready || front !== null) return
+    const to = nearestShown(listed, current)
+    if (to === null) return
+    steer(to)
+    goTo(to)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticks, ready, front, listed, current, steer])
+  /* The caret was put in a slide by hand, in the Markdown: if the pick leaves that slide out, it is the one in hand. */
+  const onCaret = (at: number) => {
+    setCaret(at)
+    const to = Math.min(slideAt(text, at), deck.slides.length - 1)
+    if (to !== current) setHeld(narrowing.focused && !focus.inFocus(anchorsNow(to)) ? to : null)
+  }
+  const anchorsNow = (index: number) => (deck.slides[index] ? anchorsOfSlide(deck.slides[index]!, project) : [])
+  /* And typing in a slide holds it: an edit can take a slide out of the pick (its link, its citation) under the hands
+     making it. */
+  const onEdit = (next: string) => {
+    if (narrowing.focused) setHeld(current)
+    doc.edit(next)
+  }
   useTalk({
     decks,
     project,
@@ -171,19 +246,8 @@ export function Workspace({
     }
   }
 
-  /*
-   * The parts of the epic ticked in the host's bar. A deck is an ordered thing
-   * a person edits and presents, so nothing is taken out of it: the slides
-   * outside the ticked parts are set back in the list, and one line says how
-   * many. The text, the slide on screen, presenting and print are untouched.
-   */
-  const focus = useFocus(host)
-  const outside = useMemo(
-    () => deck.slides.map((one) => !focus.inFocus(anchorsOf(one, project))),
-    [deck.slides, focus, project],
-  )
-  const beside = outside.filter(Boolean).length
-  const focusSaid = focus.narrow(deck.slides, (one) => anchorsOf(one, project), { noun: 'slide' }).sentence
+  const before = stepShown(listed, current, -1)
+  const after = stepShown(listed, current, 1)
   const reading = readingOf(host.passage)
   const edit = (section: SectionLink | null) => {
     const next = setSection(text, current, section)
@@ -198,6 +262,7 @@ export function Workspace({
             presenting={show.presenting !== null}
             reading={reading}
             missing={followed.missing}
+            aside={followed.aside}
             onToggleFollowing={() => setFollowing((on) => !on)}
             onPresent={show.start}
             onPresenterView={() => open('The presenter view', './app', { presenter: slug })}
@@ -261,30 +326,23 @@ export function Workspace({
         ))}
       </div>
 
-      {focusSaid ? (
-        <p role="status" data-testid="focus" title={FOCUS_WHERE} className="text-muted-foreground border-b px-3 py-1 text-[11px]">
-          {focusSaid}
-          {beside ? ` Set back in the list, not removed${outside[current] ? '; the slide on screen is one of them' : ''}.` : null}
-        </p>
-      ) : null}
       <div className="flex min-h-0 flex-1">
         <nav
           aria-label="slides"
           className="bg-muted/30 hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r p-2 @min-[720px]:flex"
         >
-          {deck.slides.map((one, index) => (
+          {/* The shown slides, each under its own number in the deck. The one held though it is outside the pick is
+              set back, which is all that says so. */}
+          {listed.map((index) => ({ one: deck.slides[index]!, index })).map(({ one, index }) => (
             <button
               key={index}
               type="button"
               aria-label={`slide ${index + 1}`}
               aria-current={index === current ? 'true' : undefined}
-              data-outside={outside[index] ? '' : undefined}
-              title={outside[index] ? 'Outside the picked parts' : undefined}
+              data-held={index === narrowing.held ? '' : undefined}
+              title={index === narrowing.held ? 'Outside the picked parts' : undefined}
               onClick={() => goTo(index)}
-              className={cn(
-                'group flex items-start gap-1.5 text-left outline-none transition-opacity',
-                outside[index] && 'opacity-35 hover:opacity-70 focus-visible:opacity-70',
-              )}
+              className={cn('group flex items-start gap-1.5 text-left outline-none transition-opacity', index === narrowing.held && 'opacity-50')}
             >
               <span className="text-muted-foreground w-4 shrink-0 pt-0.5 text-right text-[10px] tabular-nums">
                 {index + 1}
@@ -305,7 +363,7 @@ export function Workspace({
           aria-label="editor"
           className={cn('min-h-0 min-w-0 flex-1 @min-[720px]:block @min-[720px]:border-r', tab === 'edit' ? 'block' : 'hidden')}
         >
-          <EditorPane value={text} onChange={doc.edit} onCaret={setCaret} jump={jump} theme={theme} />
+          <EditorPane value={text} onChange={onEdit} onCaret={onCaret} jump={jump} theme={theme} />
         </section>
 
         <section
@@ -326,6 +384,11 @@ export function Workspace({
                 cite={cite}
                 className="drop-shadow-sm"
               />
+            ) : narrowing.focused && ready ? (
+              /* The pick leaves no slide of this deck: said here, in the pane it emptied, and nowhere else. */
+              <p role="status" data-testid="focus-empty" className="text-muted-foreground m-auto max-w-sm p-4 text-center text-xs">
+                {emptySaid(focus.parts)}
+              </p>
             ) : null}
           </div>
           <div className="flex justify-center px-3 pb-1">
@@ -343,21 +406,19 @@ export function Workspace({
               size="icon"
               className="size-6"
               aria-label="previous slide"
-              disabled={current === 0}
-              onClick={() => goTo(current - 1)}
+              disabled={before === null}
+              onClick={() => before !== null && goTo(before)}
             >
               <ChevronLeft className="size-3.5" />
             </Button>
-            <span data-testid="position">
-              {current + 1} / {deck.slides.length}
-            </span>
+            <span data-testid="position">{positionSaid(narrowing, front, deck.slides.length)}</span>
             <Button
               variant="ghost"
               size="icon"
               className="size-6"
               aria-label="next slide"
-              disabled={current >= deck.slides.length - 1}
-              onClick={() => goTo(current + 1)}
+              disabled={after === null}
+              onClick={() => after !== null && goTo(after)}
             >
               <ChevronRight className="size-3.5" />
             </Button>

@@ -22,6 +22,8 @@ export function useFollowing({
   presenting,
   goTo,
   publishDelay = PUBLISH_DELAY_MS,
+  allowed,
+  turns,
 }: {
   host: Host
   project: string
@@ -35,14 +37,36 @@ export function useFollowing({
   presenting: boolean
   goTo(index: number): void
   publishDelay?: number
-}): { reading: Reading | null; missing: string | null; point: (passage: PointedPassage) => void; turn: (passage: SectionPassage) => void } {
+  /** Which slides following may go to: the ones shown under the picked parts. Absent is all of them. */
+  allowed?: (index: number) => boolean
+  /**
+   * Whether moving to a slide may turn the paper to its section. Absent is
+   * always. Under picked parts it is false for a slide whose section is in a
+   * file outside them — one that is shown for what it cites — so that stepping
+   * through a part's slides never takes the paper out of the part.
+   */
+  turns?: (index: number) => boolean
+}): {
+  reading: Reading | null
+  missing: string | null
+  aside: { title: string; slide: number } | null
+  point: (passage: PointedPassage) => void
+  turn: (passage: SectionPassage) => void
+  steer: (index: number) => void
+} {
   const follower = useRef<Follower | null>(null)
   follower.current ??= new Follower()
-  const [shown, setShown] = useState<{ reading: Reading | null; missing: string | null }>({ reading: null, missing: null })
+  const [shown, setShown] = useState<{ reading: Reading | null; missing: string | null; aside: { title: string; slide: number } | null }>({
+    reading: null,
+    missing: null,
+    aside: null,
+  })
 
   /* Read through refs, so a slide typed into the deck is not a reason to look at the paper again. */
-  const situation = useRef({ slides, current, project })
-  situation.current = { slides, current, project }
+  const situation = useRef({ slides, current, project, allowed })
+  situation.current = { slides, current, project, allowed }
+  const mayTurn = useRef(turns)
+  mayTurn.current = turns
   const go = useRef(goTo)
   go.current = goTo
 
@@ -59,9 +83,13 @@ export function useFollowing({
     const to = one.read(reading, situation.current, enabled && !presenting)
     if (to !== null) go.current(to)
     setShown((was) =>
-      was.missing === one.missing && was.reading?.title === one.reading?.title && was.reading?.path === one.reading?.path
+      was.missing === one.missing
+      && was.aside?.slide === one.aside?.slide
+      && was.aside?.title === one.aside?.title
+      && was.reading?.title === one.reading?.title
+      && was.reading?.path === one.reading?.path
         ? was
-        : { reading: one.reading, missing: one.missing },
+        : { reading: one.reading, missing: one.missing, aside: one.aside },
     )
     /* `reading` is a fresh object on every context; its key is what changing means. */
   }, [readingKey, ready, enabled, presenting])
@@ -78,7 +106,8 @@ export function useFollowing({
     /* Opening the deck lands on a slide; that is not the person moving to it. */
     if (was === null || was === current) return
     const one = follower.current as Follower
-    const passage = one.moved(current, situation.current, enabled)
+    const passage = one.moved(current, situation.current, enabled && (mayTurn.current?.(current) ?? true))
+    setShown((s) => (s.aside === null ? s : { ...s, aside: null }))
     if (timer.current) clearTimeout(timer.current)
     timer.current = null
     if (!passage) return
@@ -122,7 +151,9 @@ export function useFollowing({
     })
   }, [])
 
-  return { ...shown, point, turn }
+  const steer = useCallback((index: number) => (follower.current as Follower).steer(index), [])
+
+  return { ...shown, point, turn, steer }
 }
 
 /** A range of a file, as a citation points the paper at it. */
