@@ -52,9 +52,10 @@ import {
  * Minted per process and printed into `/app` by `doors()`, so only
  * this app's own page holds it. Loopback is a fence around the machine, not
  * around the programs on it: without this, anything that found the port could
- * write. Reads are ungated, but for the picture door (`/api/asset`), which hands
- * out a file's bytes; `/mcp` is ungated because an agent has no page to have
- * been handed a ticket by.
+ * write. The page's reads carry it too: every door under `/api/` asks for it, and
+ * the streams, which say that something changed and never what, are the only
+ * ones that do not. `/mcp` is ungated because an agent has no page to have been
+ * handed a ticket by.
  */
 export const TICKET = mintTicket()
 
@@ -669,12 +670,18 @@ export function answer(
     return { status: 200, body: null, raw: picture, headers: PICTURE_HEADERS }
   }
 
-  if (WRITES.has(method)) {
-    /* Marked as a ticket refusal, so a page older than this server knows to reload itself. */
-    const refused = refuseTicket(ticket, TICKET, 'That press did not come from this app’s own page.')
-    if (refused) return refused
-    if (!body) return bad('That was not a request: a write sends a JSON object.')
-  }
+  /*
+   * Every other door under /api/ asks for the page's ticket, the reads with the writes: a read
+   * here answers with what is in a project, and this app's own page is the only caller it has.
+   * Marked as a ticket refusal, so a page older than this server knows to reload itself.
+   */
+  const stranger = refuseTicket(
+    ticket,
+    TICKET,
+    WRITES.has(method) ? 'That press did not come from this app’s own page.' : 'That was not asked by this app’s own page.',
+  )
+  if (stranger) return stranger
+  if (WRITES.has(method) && !body) return bad('That was not a request: a write sends a JSON object.')
   const project = method === 'GET' ? query.get('project') : field(body, 'project')
   const slug = method === 'GET' ? (query.get('slug') ?? '') : field(body, 'slug')
   const after = (reply: Reply): Reply => {

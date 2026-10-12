@@ -5,6 +5,8 @@ import { join } from 'node:path'
 
 import { parseDeck } from '../deck/format.ts'
 import {
+  citedSlice,
+  citedText,
   createDeck,
   deleteDeck,
   history,
@@ -268,5 +270,87 @@ describe('a picture a slide names', () => {
     expect(pictureBytes(null, 'figures/one.png')).toBeNull()
     expect(pictureBytes('relative/dir', 'figures/one.png')).toBeNull()
     expect(pictureBytes(join(home, 'not-there'), 'figures/one.png')).toBeNull()
+  })
+})
+
+describe('a passage a slide cites', () => {
+  const WORDS = 'The mean rating was highest.\n'
+
+  /** A project with a deck in it, a chapter, a paper of its own, and things nobody cites. */
+  function made(name: string): string {
+    const root = realpathSync(project(name))
+    must(createDeck(root, 'Talk'))
+    for (const dir of ['chapters', '.git', '.kehikot/paper/thesis', '.kehikot/paper/thesis/.cache', '.kehikot/notes']) {
+      mkdirSync(join(root, dir), { recursive: true })
+    }
+    writeFileSync(join(root, 'chapters', '4.tex'), WORDS)
+    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', 'main.tex'), WORDS)
+    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', '.cache', 'kept.tex'), WORDS)
+    writeFileSync(join(root, '.kehikot', 'notes', 'notes.json'), WORDS)
+    writeFileSync(join(root, '.env'), WORDS)
+    writeFileSync(join(root, '.git', 'config'), WORDS)
+    writeFileSync(join(root, 'chapters', '.draft.tex'), WORDS)
+    return root
+  }
+
+  test('a chapter of the project and the paper kept in it are read, whichever way the path is spelled', () => {
+    const root = made('cited')
+    expect(citedText(root, 'chapters/4.tex')).toBe(WORDS)
+    expect(citedText(root, './chapters/4.tex')).toBe(WORDS)
+    expect(citedText(root, '.kehikot/paper/thesis/main.tex')).toBe(WORDS)
+    expect(must(citedSlice(root, '.kehikot/paper/thesis/main.tex', 4, 8))).toBe('mean')
+  })
+
+  test('a dot-file or dot-folder on the way is not read, but for the paper’s own', () => {
+    const root = made('cited-hidden')
+    const refused = [
+      '.env',
+      './.env',
+      '.git/config',
+      'chapters/.draft.tex',
+      '.kehikot/notes/notes.json',
+      '.kehikot/slides/talk.md',
+      '.kehikot/paper/thesis/.cache/kept.tex',
+      '../cited/chapters/4.tex',
+      'chapters/../.env',
+      join(root, 'chapters', '4.tex'),
+      'chapters',
+      'chapters/missing.tex',
+      '',
+      'chapters/4.tex\0',
+    ]
+    for (const path of refused) expect([path, citedText(root, path)]).toEqual([path, null])
+    expect(citedSlice(root, '.env', 0, 4)).toMatchObject({ ok: false, status: 404 })
+  })
+
+  test('a link is judged by where it leads: out of the project, or into a dot-folder', () => {
+    const root = made('cited-links')
+    const outside = project('cited-outside')
+    writeFileSync(join(outside, 'far.tex'), WORDS)
+    symlinkSync(join(outside, 'far.tex'), join(root, 'chapters', 'link.tex'))
+    symlinkSync(outside, join(root, 'elsewhere'))
+    symlinkSync(join(root, '.env'), join(root, 'chapters', 'plain.tex'))
+    symlinkSync(join(root, '.git'), join(root, 'innocent'))
+    symlinkSync(join(root, 'chapters'), join(root, 'alias'))
+    expect(citedText(root, 'chapters/link.tex')).toBeNull()
+    expect(citedText(root, 'elsewhere/far.tex')).toBeNull()
+    expect(citedText(root, 'chapters/plain.tex')).toBeNull()
+    expect(citedText(root, 'innocent/config')).toBeNull()
+    /* A link that stays inside the project, to somewhere that is read, is followed. */
+    expect(citedText(root, 'alias/4.tex')).toBe(WORDS)
+  })
+
+  test('a passage is read only from a project that has decks, and is bounded', () => {
+    const root = made('cited-bounds')
+    const bare = realpathSync(project('cited-bare'))
+    writeFileSync(join(bare, 'notes.txt'), WORDS)
+    expect(citedSlice(bare, 'notes.txt', 0, 4)).toMatchObject({ ok: false, status: 404 })
+    expect(citedSlice(null, 'chapters/4.tex', 0, 4).ok).toBe(false)
+    expect(citedSlice('relative/dir', 'chapters/4.tex', 0, 4).ok).toBe(false)
+    expect(citedSlice(join(home, 'not-there'), 'chapters/4.tex', 0, 4).ok).toBe(false)
+    expect(citedSlice(root, 'chapters/4.tex', 0, 4001).ok).toBe(false)
+    expect(citedSlice(root, 'chapters/4.tex', 4, 4).ok).toBe(false)
+    expect(citedSlice(root, 'chapters/4.tex', 0, 400).ok).toBe(false)
+    expect(must(citedSlice(root, 'chapters/4.tex', 0, 3))).toBe('The')
   })
 })
