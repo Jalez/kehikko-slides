@@ -31,6 +31,8 @@ export const PATHS = {
   watch: '/api/watch',
   /** GET ?project&slug — server-sent events of {@link PresentState}. POST {@link PresentMove}. */
   present: '/api/present',
+  /** GET ?project&slug — server-sent events of {@link PointerState}. Pointed over MCP (`show_slide`), never by a page. */
+  pointer: '/api/pointer',
   /** GET ?project&slug — every slide's sources, looked for in their files: {@link CitationsReply}. */
   citations: '/api/citations',
   /** GET ?project&path&from&to — the exact words of a project file between two byte offsets: {@link SourceReply}. */
@@ -166,6 +168,16 @@ export interface PresentMove {
   slug: string
   index: number
   blank?: boolean
+}
+
+/**
+ * The slide a deck was last pointed at from outside its page. `at` is ms since the epoch of that
+ * pointing, 0 when nothing has pointed yet; a page goes to each pointing once, told apart by `at`.
+ */
+export interface PointerState {
+  slug: string
+  index: number
+  at: number
 }
 
 /** One source of one slide, as the store found it: the protocol's view of a citation. */

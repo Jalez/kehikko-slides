@@ -16,7 +16,7 @@ import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
-import { absolute, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
+import { absolute, linkedToReading, passageFor, passageKey, projectRelative, readingOf, samePath, slidePointed, type PassageLike, type Reading } from './follow.ts'
 import { anchorsOf as anchorsOfSlide } from './follow.ts'
 import { emptySaid, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
 import { openPage, pageUrl } from './open-window.ts'
@@ -193,6 +193,38 @@ export function Workspace({
     if (narrowing.focused) setHeld(current)
     doc.edit(next)
   }
+  /* A slide pointed at from outside this page: an agent's show_slide on the door, or another module's passage
+     naming this deck's file. Gone to once, as a move nobody here made — so it is not published to the paper — and
+     drawn though the picked parts leave it out, as the slide in hand is. What the door held when this page
+     arrived was shown to an earlier page, and is not gone to. */
+  const [pointed, setPointed] = useState<number | null>(null)
+  useEffect(() => {
+    let seen: number | null = null
+    return decks.followPointer(project, slug, (state) => {
+      const arriving = seen === null
+      if (state.at === seen) return
+      seen = state.at
+      if (!arriving && state.at !== 0) setPointed(state.index)
+    })
+  }, [decks, project, slug])
+  const passed = passageKey(host.passage)
+  const answered = useRef<string | null>(null)
+  useEffect(() => {
+    if (!ready || answered.current === passed) return
+    answered.current = passed
+    const to = slidePointed(host.passage, project, slug, text)
+    if (to !== null) setPointed(to)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passed, ready])
+  useLayoutEffect(() => {
+    if (pointed === null || !ready) return
+    setPointed(null)
+    if (pointed === current || pointed >= deck.slides.length) return
+    setHeld(narrowing.focused && !focus.inFocus(anchorsNow(pointed)) ? pointed : null)
+    steer(pointed)
+    goTo(pointed)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointed, ready])
   useTalk({
     decks,
     project,

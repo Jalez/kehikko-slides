@@ -4,7 +4,7 @@ import { KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-
 
 import { establishBuild, mintTicket, refuseTicket, type Reply } from 'kehikot-module-protocol/serve'
 
-import { PATHS, type DeckChange, type PresentState } from './deck/api.ts'
+import { PATHS, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
 import { addCitation } from './deck/cite.ts'
 import {
   deckProblems,
@@ -14,8 +14,9 @@ import {
   serialiseSlide,
   slideHeadline,
   slideRanges,
+  type Slide,
 } from './deck/format.ts'
-import { followTalk, moveTalk, poke, watchDecks } from './live.ts'
+import { followPointer, followTalk, moveTalk, pointAt, poke, watchDecks } from './live.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
 import {
   badSlug,
@@ -40,7 +41,7 @@ import {
 /**
  * Every door but the page, as pure functions: `answer` takes a request and
  * returns a status and a body, or `null` for "not ours, let Vite have it";
- * `stream` opens the two server-sent-event doors. `doors()` in `vite.config.ts` is the only
+ * `stream` opens the server-sent-event doors. `doors()` in `vite.config.ts` is the only
  * thing that touches a socket, which is what lets the tests call these directly.
  */
 
@@ -212,6 +213,16 @@ function tools() {
         required: ['project', 'deck', 'index', 'path', 'quote'],
       },
     },
+    {
+      name: 'show_slide',
+      description:
+        'Turn the Slides page to one slide of a deck, so the person is looking at the slide you are talking about. '
+        + 'A pointer, not an edit: nothing is written and nothing goes into the history, the person can turn away '
+        + 'by going to another slide themselves, and the next show_slide is followed again. The answer says '
+        + 'whether a Slides page is open on that deck to see it; with none open, nothing was shown to anybody. '
+        + 'A slide that is not there is refused with the deck\'s own slide list.',
+      inputSchema: { type: 'object', properties: { ...PROJECT, ...DECK, ...INDEX }, required: ['project', 'deck', 'index'] },
+    },
   ]
 }
 
@@ -253,6 +264,20 @@ function indexOf(args: Record<string, unknown>, count: number, slug: string): nu
     )
   }
   return index
+}
+
+/** The slide show_slide names. Refused with the deck's own slides: the caller is choosing one, not writing one. */
+function shownOf(args: Record<string, unknown>, slides: Slide[], slug: string): number {
+  const index = typeof args.index === 'string' && args.index.trim() !== '' ? Number(args.index) : args.index
+  if (typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < slides.length) return index
+  throw new Error(
+    [
+      `"${String(args.index)}" is not a slide of "${slug}": it has ${slides.length} slide${slides.length === 1 ? '' : 's'}, numbered 0 to ${slides.length - 1}, `
+        + 'as read_deck numbers them:',
+      ...slides.map((slide, i) => `${i}. ${slideHeadline(slide) || '(empty)'}`),
+      'Nothing was shown.',
+    ].join('\n'),
+  )
 }
 
 function by(args: Record<string, unknown>, summary: string) {
@@ -427,6 +452,22 @@ function call(name: string, args: Record<string, unknown>): string {
     return `Slide ${index} of "${slug}" now cites ${path} ${linesOf(found.at!)} as [^${done.label}]${at ? `, after "${at.slice(0, 60)}"` : ', for the slide as a whole'}.`
   }
 
+  if (name === 'show_slide') {
+    const project = projectOf(args, name)
+    const slug = deckOf(args)
+    const root = must(projectRoot(project), name)
+    const slides = parseDeck(must(readDeck(project, slug), name).text, slug).slides
+    const index = shownOf(args, slides, slug)
+    const { watching } = pointAt(root, slug, index)
+    const which = `slide ${index} of "${slug}" (${slideHeadline(slides[index]!) || 'empty'}; ${slides.length} in the deck)`
+    if (!watching) {
+      return `No Slides page is open on "${slug}", so nobody was shown ${which}. Nothing was turned and nothing was written. `
+        + 'Once the deck is open on the canvas, call show_slide again.'
+    }
+    return `Showing ${which}. ${watching === 1 ? 'One Slides page is' : `${watching} Slides pages are`} open on this deck and `
+      + 'turned to it. Nothing was written; the person can turn away, and the next show_slide is followed again.'
+  }
+
   throw new Error(`There is no tool "${name.slice(0, 60)}" here.`)
 }
 
@@ -563,20 +604,20 @@ export function stream(
   method: string,
   path: string,
   query: URLSearchParams,
-  emit: (event: DeckChange | PresentState) => void,
+  emit: (event: DeckChange | PresentState | PointerState) => void,
 ): { reply: Reply } | { close: () => void } | null {
   if (method !== 'GET') return null
   if (path === PATHS.watch) {
     const watched = watchDecks(query.get('project') ?? '', emit)
     return watched.ok ? { close: watched.value } : { reply: refused(watched) }
   }
-  if (path === PATHS.present) {
+  if (path === PATHS.present || path === PATHS.pointer) {
     const root = projectRoot(query.get('project'))
     if (!root.ok) return { reply: refused(root) }
     const slug = query.get('slug') ?? ''
     const why = badSlug(slug)
     if (why) return { reply: bad(why) }
-    return { close: followTalk(root.value, slug, emit) }
+    return { close: path === PATHS.present ? followTalk(root.value, slug, emit) : followPointer(root.value, slug, emit) }
   }
   return null
 }

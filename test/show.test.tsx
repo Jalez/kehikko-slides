@@ -1,0 +1,244 @@
+import { afterAll, afterEach, describe, expect, test } from 'bun:test'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import type { PointerState } from '../deck/api.ts'
+import { answer, stream } from '../doors.ts'
+import { Screen } from '../src/app.tsx'
+import { deckPath, slidePointed, type PassageLike } from '../src/follow.ts'
+import type { Host } from '../src/wire/use-kehikot.ts'
+import { history, readDeck } from '../store.ts'
+import { FakeEditor, editor, fakeDecks, host, pause, preview } from './fakes.tsx'
+
+/**
+ * A deck turned from outside its page: an agent's `show_slide` on the door,
+ * and another module's passage naming the deck's file. Both are pointers — the
+ * page goes there once, nothing is written, and the paper is not turned.
+ */
+
+afterEach(cleanup)
+
+const home = mkdtempSync(join(tmpdir(), 'kehikko-slides-show-'))
+afterAll(() => rmSync(home, { recursive: true, force: true }))
+
+function project(name: string): string {
+  const dir = join(home, name)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+const none = new URLSearchParams()
+const q = (query: Record<string, string>) => new URLSearchParams(query)
+
+function tool(name: string, args: Record<string, unknown>): { text: string; error: boolean } {
+  const reply = answer('POST', '/mcp', none, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, null)
+  const result = (reply?.body as { result?: { content?: { text: string }[]; isError?: boolean } }).result
+  return { text: result?.content?.[0]?.text ?? '', error: result?.isError === true }
+}
+
+const DECK = `---
+title: Defence
+---
+
+# Bridging the gap
+
+---
+
+<!-- section: chapters/2.tex | The problem -->
+## The problem
+
+---
+
+<!-- section: chapters/3.tex | Results -->
+## Results
+`
+
+function drafted(name: string): string {
+  const dir = project(name)
+  tool('create_deck', { project: dir, title: 'D' })
+  tool('write_deck', { project: dir, deck: 'd', markdown: DECK, summary: 'draft' })
+  return dir
+}
+
+const textOf = (dir: string) => (readDeck(dir, 'd') as { value: { text: string } }).value.text
+const entries = (dir: string) => (history(dir, 'd') as { value: unknown[] }).value.length
+
+describe('show_slide on the MCP door', () => {
+  test('a page open on the deck is told, and the answer says somebody saw', () => {
+    const dir = drafted('watched')
+    const seen: PointerState[] = []
+    const page = stream('GET', '/api/pointer', q({ project: dir, slug: 'd' }), (event) => seen.push(event as PointerState))
+    expect(seen).toEqual([{ slug: 'd', index: 0, at: 0 }])
+
+    const shown = tool('show_slide', { project: dir, deck: 'd', index: 2 })
+    expect(shown.error).toBe(false)
+    expect(shown.text).toMatch(/^Showing slide 2 of "d" \(Results; 3 in the deck\)\. One Slides page is open on this deck/)
+    expect(seen[1]).toMatchObject({ slug: 'd', index: 2 })
+
+    /* The same slide again is a new pointing: the person may have turned away in between. */
+    tool('show_slide', { project: dir, deck: 'd', index: '2' })
+    expect(seen).toHaveLength(3)
+    expect(seen[2]!.at).toBeGreaterThan(seen[1]!.at)
+
+    if (page && 'close' in page) page.close()
+  })
+
+  test('with no page open it says nobody saw, and a page that opens later is not turned', () => {
+    const dir = drafted('unwatched')
+    const shown = tool('show_slide', { project: dir, deck: 'd', index: 1 })
+    expect(shown.error).toBe(false)
+    expect(shown.text).toMatch(/^No Slides page is open on "d", so nobody was shown slide 1 of "d" \(The problem; 3 in the deck\)/)
+
+    const seen: PointerState[] = []
+    const page = stream('GET', '/api/pointer', q({ project: dir, slug: 'd' }), (event) => seen.push(event as PointerState))
+    expect(seen).toEqual([{ slug: 'd', index: 0, at: 0 }])
+    if (page && 'close' in page) page.close()
+  })
+
+  test('showing writes nothing: the deck and its history are as they were', () => {
+    const dir = drafted('pointer-only')
+    const page = stream('GET', '/api/pointer', q({ project: dir, slug: 'd' }), () => {})
+    tool('show_slide', { project: dir, deck: 'd', index: 2 })
+    if (page && 'close' in page) page.close()
+    tool('show_slide', { project: dir, deck: 'd', index: 0 })
+    expect(textOf(dir)).toBe(DECK)
+    expect(entries(dir)).toBe(2)
+  })
+
+  test('a slide that is not there is refused with the deck’s own slides, and nobody is told', () => {
+    const dir = drafted('refused')
+    const seen: PointerState[] = []
+    const page = stream('GET', '/api/pointer', q({ project: dir, slug: 'd' }), (event) => seen.push(event as PointerState))
+    for (const index of [3, -1, 1.5, 'six', undefined]) {
+      const refused = tool('show_slide', { project: dir, deck: 'd', index })
+      expect(refused.error).toBe(true)
+      expect(refused.text).toContain('is not a slide of "d": it has 3 slides, numbered 0 to 2, as read_deck numbers them:')
+      expect(refused.text).toContain('0. Bridging the gap\n1. The problem\n2. Results\nNothing was shown.')
+    }
+    const cases: [Record<string, unknown>, RegExp][] = [
+      [{ project: dir, deck: 'nope', index: 0 }, /no deck "nope".*list_decks/],
+      [{ project: dir, deck: '../x', index: 0 }, /not a deck name/],
+      [{ deck: 'd', index: 0 }, /needs project/],
+    ]
+    for (const [args, why] of cases) {
+      const refused = tool('show_slide', args)
+      expect(refused.error).toBe(true)
+      expect(refused.text).toMatch(why)
+    }
+    expect(seen).toHaveLength(1)
+    if (page && 'close' in page) page.close()
+  })
+
+  test('the pointer door refuses a deck name that is not one', () => {
+    const refused = stream('GET', '/api/pointer', q({ project: project('door'), slug: '../x' }), () => {})
+    expect(refused && 'reply' in refused && refused.reply.status).toBe(400)
+  })
+})
+
+const PROJECT = '/work/thesis'
+const FILE = `${PROJECT}/.kehikot/slides/defence.md`
+const pointing = (over: Partial<PassageLike>): PassageLike => ({ path: FILE, page: null, from: null, to: null, section: null, ...over })
+const bytes = (text: string, before: string) => new TextEncoder().encode(text.slice(0, text.indexOf(before))).length
+
+describe('a passage naming the deck’s file', () => {
+  test('the file is the deck’s own, under the project', () => {
+    expect(deckPath(PROJECT, 'defence')).toBe(FILE)
+    expect(deckPath(`${PROJECT}/`, 'defence')).toBe(FILE)
+  })
+
+  test('a page is the slide’s number, counting from 1', () => {
+    expect(slidePointed(pointing({ page: 1 }), PROJECT, 'defence', DECK)).toBe(0)
+    expect(slidePointed(pointing({ page: 3 }), PROJECT, 'defence', DECK)).toBe(2)
+    expect(slidePointed(pointing({ page: 4 }), PROJECT, 'defence', DECK)).toBeNull()
+  })
+
+  test('a range is bytes of the Markdown, and wins over the page', () => {
+    const accented = DECK.replace('Bridging the gap', 'Bridging the gäp — née')
+    const from = bytes(accented, '## Results')
+    expect(from).toBeGreaterThan(accented.indexOf('## Results'))
+    expect(slidePointed(pointing({ from, to: from + 5, page: 1 }), PROJECT, 'defence', accented)).toBe(2)
+    expect(slidePointed(pointing({ from: bytes(DECK, '## The problem'), to: bytes(DECK, '## Results') }), PROJECT, 'defence', DECK)).toBe(1)
+  })
+
+  test('another file, another deck, or no slide named: nothing is pointed at', () => {
+    expect(slidePointed(null, PROJECT, 'defence', DECK)).toBeNull()
+    expect(slidePointed(pointing({}), PROJECT, 'defence', DECK)).toBeNull()
+    expect(slidePointed(pointing({ page: 2 }), PROJECT, 'other', DECK)).toBeNull()
+    expect(slidePointed(pointing({ page: 2, path: `${PROJECT}/chapters/2.tex` }), PROJECT, 'defence', DECK)).toBeNull()
+  })
+})
+
+function draw(over: Partial<Host> = {}, decks: Parameters<typeof fakeDecks>[0] = {}) {
+  const fake = fakeDecks(decks, { text: DECK })
+  const asked: string[] = []
+  const request: Host['request'] = async (method) => {
+    asked.push(method)
+    return null
+  }
+  const at = (passage: PassageLike | null) => (
+    <Screen host={host({ request, passage, ...over })} decks={fake.decks} editor={FakeEditor} saveDelay={20} publishDelay={5} />
+  )
+  const view = render(at(over.passage ?? null))
+  return { fake, turned: () => asked.filter((method) => method === 'passage.set'), read: (passage: PassageLike | null) => view.rerender(at(passage)) }
+}
+
+const heading = () => preview().getByRole('heading').textContent
+const position = () => preview().getByTestId('position').textContent
+
+describe('the page, pointed at a slide', () => {
+  test('goes to it without turning the paper or saving, lets the person turn away, and follows the next pointing', async () => {
+    const run = draw()
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    run.fake.point(2, 100)
+    await waitFor(() => expect(heading()).toBe('Results'))
+    await pause(30)
+    expect(run.turned()).toEqual([])
+    expect(run.fake.of('save')).toEqual([])
+
+    fireEvent.click(screen.getByRole('button', { name: 'slide 1' }))
+    await waitFor(() => expect(position()).toBe('1 / 3'))
+    /* The stream saying the same pointing again (a reconnect) is not a new one. */
+    run.fake.point(2, 100)
+    await pause(10)
+    expect(position()).toBe('1 / 3')
+    run.fake.point(2, 101)
+    await waitFor(() => expect(heading()).toBe('Results'))
+  })
+
+  test('what the door held when the page arrived is not gone to', async () => {
+    draw({}, {
+      followPointer(_project, slug, onPoint) {
+        onPoint({ slug, index: 2, at: 50 })
+        return () => {}
+      },
+    })
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    await pause(10)
+    expect(position()).toBe('1 / 3')
+  })
+
+  test('a slide the deck does not have is not gone to', async () => {
+    const run = draw()
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    run.fake.point(7, 100)
+    await pause(10)
+    expect(position()).toBe('1 / 3')
+  })
+
+  test('another module’s passage on the deck’s file brings its slide up, once', async () => {
+    const run = draw()
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    run.read(pointing({ page: 2 }))
+    await waitFor(() => expect(heading()).toBe('The problem'))
+    await pause(30)
+    expect(run.turned()).toEqual([])
+
+    fireEvent.click(screen.getByRole('button', { name: 'slide 3' }))
+    await waitFor(() => expect(heading()).toBe('Results'))
+    run.read(pointing({ page: 2 }))
+    await pause(10)
+    expect(heading()).toBe('Results')
+  })
+})

@@ -137,6 +137,7 @@ describe('the MCP door', () => {
       'edit_slide',
       'link_slide',
       'cite_slide',
+      'show_slide',
     ])
   })
 

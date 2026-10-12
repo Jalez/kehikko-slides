@@ -1,13 +1,13 @@
 import { existsSync, readdirSync, readFileSync, watch, type FSWatcher } from 'node:fs'
 import { join } from 'node:path'
 
-import { SLUG, type DeckChange, type PresentState } from './deck/api.ts'
+import { SLUG, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
 import { slidesDir, versionOf, type Result } from './store.ts'
 
 /**
  * What is pushed to pages: a deck file changed (by any path — this module's
- * API, an agent over MCP, or a person editing the file on disk), and where a
- * talk is. Plain listeners; `vite.config.ts` turns them into server-sent events.
+ * API, an agent over MCP, or a person editing the file on disk), where a
+ * talk is, and which slide a deck was pointed at. Plain listeners; `vite.config.ts` turns them into server-sent events.
  */
 
 type Listener<T> = (event: T) => void
@@ -178,4 +178,46 @@ export function moveTalk(root: string, slug: string, index: number, blank: boole
   one.state = { slug, index, blank, at: Date.now() }
   for (const listener of one.listeners) listener(one.state)
   return one.state
+}
+
+/* ------------------------------------------------------------------ *
+ * Pointing
+ * ------------------------------------------------------------------ */
+
+const pointers = new Map<string, { state: PointerState; listeners: Set<Listener<PointerState>> }>()
+
+/**
+ * Listen for a deck being pointed at a slide. What is held is sent at once,
+ * then every pointing. One listener is one page open on the deck, which is
+ * how `pointAt` knows whether anybody saw. In memory only, and forgotten when
+ * the last page leaves: a pointer is a gesture, not a place the deck is kept at.
+ */
+export function followPointer(root: string, slug: string, listener: Listener<PointerState>): () => void {
+  const key = `${root}\0${slug}`
+  let one = pointers.get(key)
+  if (!one) {
+    one = { state: { slug, index: 0, at: 0 }, listeners: new Set() }
+    pointers.set(key, one)
+  }
+  const mine = one
+  mine.listeners.add(listener)
+  listener(mine.state)
+  return () => {
+    mine.listeners.delete(listener)
+    if (!mine.listeners.size && pointers.get(key) === mine) pointers.delete(key)
+  }
+}
+
+/**
+ * Point a deck at a slide, and say how many pages are open on it to see.
+ * Nothing is written anywhere; with no page open nothing is kept either.
+ */
+export function pointAt(root: string, slug: string, index: number): { state: PointerState; watching: number } {
+  const one = pointers.get(`${root}\0${slug}`)
+  /* Two pointings in one millisecond are still two: a page tells them apart by `at`. */
+  const state = { slug, index, at: Math.max(Date.now(), (one?.state.at ?? 0) + 1) }
+  if (!one) return { state, watching: 0 }
+  one.state = state
+  for (const listener of one.listeners) listener(state)
+  return { state, watching: one.listeners.size }
 }
