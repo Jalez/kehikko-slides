@@ -34,6 +34,7 @@ export const PATHS = {
   /**
    * GET ?project&slug — server-sent events of {@link PointerState}. Pointed over MCP (`show_slide`), never by a page.
    * `&presenting=1`: the page is giving a talk, and is counted but sent no pointing.
+   * POST {@link PointerSaid}: a page saying what it did with one pointing, so the door can tell its caller.
    */
   pointer: '/api/pointer',
   /** GET ?project&slug — every slide's sources, looked for in their files: {@link CitationsReply}. */
@@ -181,6 +182,19 @@ export interface PointerState {
   slug: string
   index: number
   at: number
+}
+
+/**
+ * What a page did with the pointing made at `at`. `shown`: the slide is on its screen. `outside`: on its screen
+ * though the parts picked there leave it out, drawn as the slide in hand. `stale`: not turned, the text it holds has
+ * no such slide. `presenting`: not turned, it is giving a talk. `hidden`: its window was hidden when it answered.
+ */
+export interface PointerSaid {
+  project: string
+  slug: string
+  at: number
+  did: 'shown' | 'outside' | 'stale' | 'presenting'
+  hidden: boolean
 }
 
 /** One source of one slide, as the store found it: the protocol's view of a citation. */

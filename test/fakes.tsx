@@ -122,6 +122,9 @@ export function fakeDecks(
       onPoint({ slug, index: 0, at: 0 })
       return () => pointers.delete(onPoint)
     },
+    async pointed(project, slug, at, did, hidden) {
+      record('pointed', project, slug, at, did, hidden)
+    },
     async citations(project, slug) {
       record('citations', project, slug)
       return []

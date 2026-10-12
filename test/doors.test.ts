@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { WELL_KNOWN } from 'kehikot-module-protocol'
 
 import { parseDeck } from '../deck/format.ts'
-import { MANIFEST, TICKET, answer, stream } from '../doors.ts'
+import { MANIFEST, TICKET, stream } from '../doors.ts'
+import { answer } from './now.ts'
 import { ID } from '../manifest.ts'
 import { history, readDeck } from '../store.ts'
 

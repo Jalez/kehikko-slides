@@ -184,8 +184,30 @@ export function moveTalk(root: string, slug: string, index: number, blank: boole
  * Pointing
  * ------------------------------------------------------------------ */
 
+/**
+ * What one page did with a pointing, in its own words. `shown`: the slide is on its screen.
+ * `outside`: on its screen though the parts picked there leave it out, as the slide in hand.
+ * `stale`: not turned, because the text it holds has no such slide. `presenting`: not turned,
+ * because it is giving a talk. `hidden` is whether its window was hidden when it answered.
+ */
+export interface PointerHeard {
+  did: 'shown' | 'outside' | 'stale' | 'presenting'
+  hidden: boolean
+}
+export const POINTER_DID = ['shown', 'outside', 'stale', 'presenting'] as const
+
+/** How long `pointAt` waits for the pages it told to say what they did. A page answers in about a third of a second; tests shorten it. */
+export const POINTER = { waitMs: 1500 }
+
+interface Waiting {
+  at: number
+  need: number
+  heard: PointerHeard[]
+  settle(): void
+}
+
 /* Each listener, with whether its page said it is presenting. */
-const pointers = new Map<string, { state: PointerState; listeners: Map<Listener<PointerState>, boolean> }>()
+const pointers = new Map<string, { state: PointerState; listeners: Map<Listener<PointerState>, boolean>; waiting: Waiting | null }>()
 
 /**
  * Listen for a deck being pointed at a slide. What is held is sent at once,
@@ -199,7 +221,7 @@ export function followPointer(root: string, slug: string, listener: Listener<Poi
   const key = `${root}\0${slug}`
   let one = pointers.get(key)
   if (!one) {
-    one = { state: { slug, index: 0, at: 0 }, listeners: new Map() }
+    one = { state: { slug, index: 0, at: 0 }, listeners: new Map(), waiting: null }
     pointers.set(key, one)
   }
   const mine = one
@@ -215,12 +237,25 @@ export function followPointer(root: string, slug: string, listener: Listener<Poi
  * Point a deck at a slide, and say how many open pages were told (`watching`)
  * and how many were left alone because they are `presenting`. Nothing is
  * written anywhere; with no page open nothing is kept either.
+ *
+ * Telling a page is not the page showing it: the parts picked there may leave
+ * the slide out, it may hold text without that slide, its window may be
+ * hidden. So each page told says what it did (`heardPointer`), and `heard`
+ * settles with those answers once every page told has given one, or after
+ * `POINTER.waitMs` with the ones that came. A page that said nothing is one
+ * nothing is known about, and is never counted as showing.
  */
-export function pointAt(root: string, slug: string, index: number): { state: PointerState; watching: number; presenting: number } {
+export function pointAt(
+  root: string,
+  slug: string,
+  index: number,
+): { state: PointerState; watching: number; presenting: number; heard: Promise<PointerHeard[]> } {
   const one = pointers.get(`${root}\0${slug}`)
   /* Two pointings in one millisecond are still two: a page tells them apart by `at`. */
   const state = { slug, index, at: Math.max(Date.now(), (one?.state.at ?? 0) + 1) }
-  if (!one) return { state, watching: 0, presenting: 0 }
+  if (!one) return { state, watching: 0, presenting: 0, heard: Promise.resolve([]) }
+  /* A pointing still being waited on is over: the page is somewhere else now, and its answer is what came. */
+  one.waiting?.settle()
   one.state = state
   let watching = 0
   for (const [listener, presenting] of one.listeners) {
@@ -228,5 +263,30 @@ export function pointAt(root: string, slug: string, index: number): { state: Poi
     watching += 1
     listener(state)
   }
-  return { state, watching, presenting: one.listeners.size - watching }
+  const heard: PointerHeard[] = []
+  const answers =
+    watching === 0
+      ? Promise.resolve(heard)
+      : new Promise<PointerHeard[]>((resolve) => {
+          const settle = () => {
+            clearTimeout(timer)
+            if (one.waiting?.at === state.at) one.waiting = null
+            resolve(heard)
+          }
+          const timer = setTimeout(settle, POINTER.waitMs)
+          one.waiting = { at: state.at, need: watching, heard, settle }
+        })
+  return { state, watching, presenting: one.listeners.size - watching, heard: answers }
+}
+
+/**
+ * A page saying what it did with the pointing made at `at`. False when nobody
+ * is waiting for it: the answer came too late, or was to an older pointing.
+ */
+export function heardPointer(root: string, slug: string, at: number, said: PointerHeard): boolean {
+  const waiting = pointers.get(`${root}\0${slug}`)?.waiting
+  if (!waiting || waiting.at !== at) return false
+  waiting.heard.push(said)
+  if (waiting.heard.length >= waiting.need) waiting.settle()
+  return true
 }
