@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Hint } from '@/controls'
 import { DeckEditor, type Editor } from '@/editor/deck-editor'
 import { HistoryDialog } from '@/history'
+import { PictureProject } from '@/slides/markdown'
 import { Switcher, type Item } from '@/switcher'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 import { useKehikot, type Host } from '@/wire/use-kehikot'
@@ -173,21 +174,23 @@ export function Screen({
         ) : !project || !list ? null : !open ? (
           <FirstDeck onCreate={create} />
         ) : (
-          <Workspace
-            key={`${open}:${generation}`}
-            decks={decks}
-            host={host}
-            project={project}
-            slug={open}
-            watched={watched}
-            editor={editor}
-            theme={host.theme}
-            saveDelay={saveDelay}
-            publishDelay={publishDelay}
-            header={controls}
-            onHistory={() => setHistoryOpen(true)}
-            onState={setState}
-          />
+          <PictureProject.Provider value={project}>
+            <Workspace
+              key={`${open}:${generation}`}
+              decks={decks}
+              host={host}
+              project={project}
+              slug={open}
+              watched={watched}
+              editor={editor}
+              theme={host.theme}
+              saveDelay={saveDelay}
+              publishDelay={publishDelay}
+              header={controls}
+              onHistory={() => setHistoryOpen(true)}
+              onState={setState}
+            />
+          </PictureProject.Provider>
         )}
       </main>
     </div>

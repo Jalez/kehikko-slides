@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,7 +8,9 @@ import {
   createDeck,
   deleteDeck,
   history,
+  MAX_PICTURE_BYTES,
   listDecks,
+  pictureBytes,
   readDeck,
   record,
   recordedWrite,
@@ -176,5 +178,95 @@ describe('the undo trail', () => {
     expect(entries[0]?.summary).toBe('edit 54')
     expect(entries[49]?.summary).toBe('edit 5')
     expect(must(history(dir, 'two')).length).toBe(1)
+  })
+})
+
+describe('a picture a slide names', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+  const PDF = Buffer.from('%PDF-1.7\n')
+  const SVG = '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+  /** A project with a deck in it, pictures, and things that are not pictures. */
+  function made(name: string): string {
+    const root = realpathSync(project(name))
+    must(createDeck(root, 'Talk'))
+    for (const dir of ['figures', '.git', '.kehikot/paper/thesis/figures', '.kehikot/paper/thesis/.cache', '.kehikot/notes']) {
+      mkdirSync(join(root, dir), { recursive: true })
+    }
+    writeFileSync(join(root, 'figures', 'one.png'), PNG)
+    writeFileSync(join(root, 'figures', 'drawn.svg'), SVG)
+    writeFileSync(join(root, 'figures', 'page.svg'), '<html><script>alert(1)</script></html>')
+    writeFileSync(join(root, 'figures', 'renamed.png'), 'TOKEN=1')
+    writeFileSync(join(root, 'figures', 'empty.png'), '')
+    writeFileSync(join(root, 'figures', 'huge.png'), Buffer.concat([PNG, Buffer.alloc(MAX_PICTURE_BYTES)]))
+    writeFileSync(join(root, '.env'), 'TOKEN=1')
+    writeFileSync(join(root, '.hidden.png'), PNG)
+    writeFileSync(join(root, 'notes.md'), '# notes')
+    writeFileSync(join(root, '.git', 'packed.png'), PNG)
+    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', 'figures', 'flow.pdf'), PDF)
+    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', '.cache', 'kept.png'), PNG)
+    writeFileSync(join(root, '.kehikot', 'notes', 'pasted.png'), PNG)
+    return root
+  }
+
+  test('a picture inside the project is served with its type, whichever way the path is spelled', () => {
+    const root = made('pictures')
+    expect(pictureBytes(root, 'figures/one.png')).toEqual({ bytes: PNG, type: 'image/png' })
+    expect(pictureBytes(root, './figures/one.png')?.type).toBe('image/png')
+    expect(pictureBytes(root, 'figures/drawn.svg')?.type).toBe('image/svg+xml')
+    /* A paper's figures: the one dot-folder that is read, and the one place a PDF is the picture. */
+    expect(pictureBytes(root, '.kehikot/paper/thesis/figures/flow.pdf')?.type).toBe('application/pdf')
+  })
+
+  test('what is not a picture is not served, by its name or by its bytes', () => {
+    const root = made('not-pictures')
+    for (const path of ['.env', 'notes.md', 'figures', 'figures/', '', 'figures/missing.png', 'figures/renamed.png', 'figures/page.svg', 'figures/empty.png', 'figures/huge.png']) {
+      expect([path, pictureBytes(root, path)]).toEqual([path, null])
+    }
+  })
+
+  test('a path that leaves the project, or goes through a dot-folder, is refused', () => {
+    const root = made('confined')
+    writeFileSync(join(home, 'outside.png'), PNG)
+    const refused = [
+      '../outside.png',
+      'figures/../../outside.png',
+      'figures/../figures/one.png',
+      join(root, 'figures', 'one.png'),
+      '.hidden.png',
+      '.git/packed.png',
+      'figures/../.git/packed.png',
+      '.kehikot/notes/pasted.png',
+      '.kehikot/paper/thesis/.cache/kept.png',
+      '.kehikot/paper/../../.git/packed.png',
+      'figures/one.png\0.md',
+    ]
+    for (const path of refused) expect([path, pictureBytes(root, path)]).toEqual([path, null])
+  })
+
+  test('a link out of the project is refused, whether it is the picture or a folder on the way to it', () => {
+    const root = made('links')
+    const outside = realpathSync(project('links-outside'))
+    writeFileSync(join(outside, 'far.png'), PNG)
+    symlinkSync(join(outside, 'far.png'), join(root, 'figures', 'link.png'))
+    symlinkSync(outside, join(root, 'elsewhere'))
+    symlinkSync(join(root, '.git'), join(root, 'innocent'))
+    symlinkSync(join(root, 'figures'), join(root, 'alias'))
+    expect(pictureBytes(root, 'figures/link.png')).toBeNull()
+    expect(pictureBytes(root, 'elsewhere/far.png')).toBeNull()
+    /* Inside the project, but a dot-folder once resolved. */
+    expect(pictureBytes(root, 'innocent/packed.png')).toBeNull()
+    /* A link that stays inside, to somewhere a picture may be, is only another name for it. */
+    expect(pictureBytes(root, 'alias/one.png')?.type).toBe('image/png')
+  })
+
+  test('only a project with a slides folder is read: no other directory is', () => {
+    const bare = realpathSync(project('no-decks'))
+    mkdirSync(join(bare, 'figures'))
+    writeFileSync(join(bare, 'figures', 'one.png'), PNG)
+    expect(pictureBytes(bare, 'figures/one.png')).toBeNull()
+    expect(pictureBytes(null, 'figures/one.png')).toBeNull()
+    expect(pictureBytes('relative/dir', 'figures/one.png')).toBeNull()
+    expect(pictureBytes(join(home, 'not-there'), 'figures/one.png')).toBeNull()
   })
 })

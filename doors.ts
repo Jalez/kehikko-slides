@@ -27,6 +27,7 @@ import {
   deleteDeck,
   history,
   listDecks,
+  pictureBytes,
   projectRoot,
   readDeck,
   record,
@@ -51,8 +52,9 @@ import {
  * Minted per process and printed into `/app` by `doors()`, so only
  * this app's own page holds it. Loopback is a fence around the machine, not
  * around the programs on it: without this, anything that found the port could
- * write. Reads are ungated, and `/mcp` is ungated because an agent has no page
- * to have been handed a ticket by.
+ * write. Reads are ungated, but for the picture door (`/api/asset`), which hands
+ * out a file's bytes; `/mcp` is ungated because an agent has no page to have
+ * been handed a ticket by.
  */
 export const TICKET = mintTicket()
 
@@ -606,6 +608,16 @@ function mcp(rpc: Rpc): Reply | Promise<Reply> {
 
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
+/** What rides with every picture. `style-src` lets an SVG's own `<style>` colour it; nothing in it can load or run. */
+export const PICTURE_HEADERS: Record<string, string> = {
+  'cache-control': 'private, max-age=60',
+  'x-content-type-options': 'nosniff',
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  'cross-origin-resource-policy': 'same-origin',
+  /* An `<img>` takes no notice of this; an address opened on its own is saved rather than shown. */
+  'content-disposition': 'attachment',
+}
+
 function done<T>(result: Result<T>, shape: (value: T) => Record<string, unknown>): Reply {
   return result.ok ? ok(shape(result.value)) : refused(result)
 }
@@ -634,6 +646,28 @@ export function answer(
   }
 
   if (!path.startsWith('/api/')) return null
+
+  /*
+   * A picture a slide names, from the project: the one door here that answers with a file's bytes.
+   *
+   * Behind the ticket though it is a read, because it hands out what is on the disk rather than
+   * what this module keeps. An `<img>` cannot carry a header, so the ticket rides in the address,
+   * as the page that drew the slide printed it. Everything `pictureBytes` refuses is one 404:
+   * an answer that told them apart would report what is on this disk.
+   *
+   * The headers are for the bytes being opened on their own rather than in an `<img>`: an SVG is
+   * a document and would run script on this origin, so it is sandboxed with nothing to load,
+   * never sniffed into another type, and not embeddable by a page on another origin. Kept by the
+   * browser for a minute, privately, so turning a slide does not fetch its figure again.
+   */
+  if (path === PATHS.asset) {
+    if (method !== 'GET') return bad('A picture is only read.', 405)
+    const refused = refuseTicket(query.get('ticket') ?? ticket, TICKET, 'That picture was not asked for by this app’s own page.')
+    if (refused) return refused
+    const picture = pictureBytes(query.get('project'), query.get('path') ?? '')
+    if (!picture) return bad('There is no such picture in this project.', 404)
+    return { status: 200, body: null, raw: picture, headers: PICTURE_HEADERS }
+  }
 
   if (WRITES.has(method)) {
     /* Marked as a ticket refusal, so a page older than this server knows to reload itself. */

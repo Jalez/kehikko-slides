@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { cleanup, render } from '@testing-library/react'
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 
 import { parseSlide } from '../deck/format.ts'
-import { assetUrl, isProjectPath } from '../src/slides/markdown.tsx'
+import { PictureProject, assetUrl, isProjectPath } from '../src/slides/markdown.tsx'
 import { SlideView, leadingHeading } from '../src/slides/slide-view.tsx'
 
 afterEach(cleanup)
+
+/* Where the page is served. With no address at all, happy-dom fails a picture named by a relative path at once. */
+beforeAll(() => (window as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM.setURL('http://127.0.0.1:7990/app'))
 
 const draw = (raw: string, props: { showSection?: boolean } = {}) =>
   render(<SlideView slide={parseSlide(raw)} {...props} />).container
@@ -40,6 +43,50 @@ describe('SlideView', () => {
     expect(img?.getAttribute('src')).toBe(assetUrl('figures/bridge.png'))
     expect(img?.getAttribute('alt')).toBe('a bridge')
     expect(view.querySelector('.slide-caption')?.textContent).toContain('The bridge, 1890')
+  })
+
+  test('with a project named, a picture is fetched from this app’s own door for it; a URL is left as written', () => {
+    const view = render(
+      <PictureProject.Provider value="/work/thesis">
+        <SlideView slide={parseSlide('![a bridge](figures/bridge.png)\n\n![far](https://example.org/far.png)')} />
+      </PictureProject.Provider>,
+    ).container
+    expect([...view.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
+      './api/asset?project=%2Fwork%2Fthesis&path=figures%2Fbridge.png',
+      'https://example.org/far.png',
+    ])
+  })
+
+  test('the door’s address carries the page’s ticket, and no project leaves the path as written', () => {
+    expect(assetUrl('figures/a b.png', '/work/thesis', 'T1')).toBe('./api/asset?project=%2Fwork%2Fthesis&path=figures%2Fa+b.png&ticket=T1')
+    expect(assetUrl('figures/bridge.png', null, 'T1')).toBe('figures/bridge.png')
+  })
+
+  test('a picture that does not load is a box with its alt text, and is not asked for again', () => {
+    const slide = parseSlide('<!-- layout: image -->\n## Bridge\n![a bridge](figures/gone.png)\nThe bridge, 1890')
+    const first = render(<SlideView slide={slide} />)
+    fireEvent.error(first.container.querySelector('img')!)
+    expect(first.container.querySelector('img')).toBeNull()
+    const missing = (view: { container: HTMLElement }) => view.container.querySelector('[data-testid="picture-missing"]')
+    const box = missing(first)!
+    expect(box.textContent).toBe('a bridge')
+    expect(box.getAttribute('role')).toBe('img')
+    /* The layout around it stands: the heading and the caption are where they were. */
+    expect(first.container.querySelector('h2')?.textContent).toBe('Bridge')
+    expect(first.container.querySelector('.slide-caption')?.textContent).toContain('The bridge, 1890')
+    /* Drawn again (the strip, the next turn of the slide): no second request. */
+    const second = render(<SlideView slide={slide} />)
+    expect(second.container.querySelector('img')).toBeNull()
+    expect(missing(second)?.textContent).toBe('a bridge')
+    /* The same place on screen turned to another slide and back: still no request for the one that failed. */
+    second.rerender(<SlideView slide={parseSlide('<!-- layout: image -->\n![there](figures/there.png)')} />)
+    expect(second.container.querySelector('img')?.getAttribute('src')).toBe('figures/there.png')
+    second.rerender(<SlideView slide={slide} />)
+    expect(second.container.querySelector('img')).toBeNull()
+    /* With no alt text, the path it was looked for at. */
+    const bare = render(<SlideView slide={parseSlide('![](figures/unnamed.png)')} />)
+    fireEvent.error(bare.container.querySelector('img')!)
+    expect(missing(bare)?.textContent).toBe('figures/unnamed.png')
   })
 
   test('a quote slide draws a blockquote', () => {

@@ -10,7 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 
 import { kehikotDir, moduleDir, resolveSource, within, type CitationView } from 'kehikot-module-protocol'
 
@@ -212,6 +212,83 @@ export function citedText(root: string, path: string): string | null {
     const stat = statSync(file)
     if (!stat.isFile() || stat.size > MAX_CITED_BYTES) return null
     return readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Pictures
+ * ------------------------------------------------------------------ */
+
+/** The largest picture a slide is served. A figure is far smaller. */
+export const MAX_PICTURE_BYTES = 10_000_000
+
+const starts = (bytes: Uint8Array, at: number, ...want: number[]) => want.every((byte, i) => bytes[at + i] === byte)
+const ascii = (text: string) => [...text].map((one) => one.charCodeAt(0))
+
+/**
+ * What a slide may show from the project: by extension, the type it is sent
+ * as, and what its first bytes must be. Both have to agree, so a file renamed
+ * to `.png` is not served as one. `pdf` is here because a paper's figures are
+ * PDFs; only WebKit (the desktop app) draws one in an `<img>`.
+ */
+const PICTURES: Record<string, { type: string; looks: (bytes: Uint8Array) => boolean }> = {
+  png: { type: 'image/png', looks: (b) => starts(b, 0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) },
+  jpg: { type: 'image/jpeg', looks: (b) => starts(b, 0, 0xff, 0xd8, 0xff) },
+  jpeg: { type: 'image/jpeg', looks: (b) => starts(b, 0, 0xff, 0xd8, 0xff) },
+  gif: { type: 'image/gif', looks: (b) => starts(b, 0, ...ascii('GIF87a')) || starts(b, 0, ...ascii('GIF89a')) },
+  webp: { type: 'image/webp', looks: (b) => starts(b, 0, ...ascii('RIFF')) && starts(b, 8, ...ascii('WEBP')) },
+  pdf: { type: 'application/pdf', looks: (b) => starts(b, 0, ...ascii('%PDF-')) },
+  /* Markup, so no magic number: it has to open as XML and have an <svg> element near the top. */
+  svg: {
+    type: 'image/svg+xml',
+    looks: (b) => {
+      const head = Buffer.from(b.subarray(0, 2048)).toString('utf8').replace(/^﻿/, '').trimStart()
+      return head.startsWith('<') && /<svg[\s>]/i.test(head)
+    },
+  },
+}
+
+/** Where a paper's figures are kept: the one dot-folder a picture is served from. */
+const PAPER_FIGURES = ['.kehikot', 'paper']
+
+/** Does this path go through a dot-file or dot-folder (`.git`, `.env`, `..`) other than a paper's own? */
+function hidden(segments: string[]): boolean {
+  const rest = PAPER_FIGURES.every((name, i) => segments[i] === name) ? segments.slice(PAPER_FIGURES.length) : segments
+  return rest.some((one) => one.startsWith('.'))
+}
+
+/**
+ * A picture in the project that a slide names, or null when it is not served.
+ * The path is a deck's, and a deck can arrive with a cloned project, so it is a
+ * stranger's string. Refused, all alike:
+ *
+ * - a project that is not one with a slides folder: decks are the only thing
+ *   that names a picture, so no other directory is read through this door;
+ * - an absolute path, `..`, and any dot-file or dot-folder on the way, as
+ *   written AND as resolved, except a paper's own (`.kehikot/paper/…`), where
+ *   its figures are;
+ * - anything resolving outside the project, through a link at any segment;
+ * - what is not a picture by its extension, or whose bytes are not that type;
+ * - what is missing, not a file, empty, or over {@link MAX_PICTURE_BYTES}.
+ */
+export function pictureBytes(project: string | null | undefined, path: string): { bytes: Uint8Array; type: string } | null {
+  const slides = slidesDir(project, false)
+  if (!slides.ok || !existsSync(slides.value.dir)) return null
+  const root = slides.value.root
+  const kind = PICTURES[/\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase() ?? '']
+  if (!kind || path.length > 1000 || path.includes('\0') || isAbsolute(path)) return null
+  const written = path.replace(/\\/g, '/').replace(/^(\.\/)+/, '')
+  if (hidden(written.split('/'))) return null
+  try {
+    /* Every segment resolved, so a folder that is a link out of the project is refused like a file that is one. */
+    const real = realpathSync(join(root, written))
+    if (!within(root, real) || real === root || hidden(relative(root, real).split('/'))) return null
+    const stat = statSync(real)
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_PICTURE_BYTES) return null
+    const bytes = readFileSync(real)
+    return kind.looks(bytes) ? { bytes, type: kind.type } : null
   } catch {
     return null
   }

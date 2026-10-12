@@ -6,10 +6,10 @@ import { join } from 'node:path'
 import { WELL_KNOWN } from 'kehikot-module-protocol'
 
 import { parseDeck } from '../deck/format.ts'
-import { MANIFEST, TICKET, stream } from '../doors.ts'
+import { MANIFEST, PICTURE_HEADERS, TICKET, stream } from '../doors.ts'
 import { answer } from './now.ts'
 import { ID } from '../manifest.ts'
-import { history, readDeck } from '../store.ts'
+import { createDeck, history, readDeck } from '../store.ts'
 
 const home = mkdtempSync(join(tmpdir(), 'kehikko-slides-doors-'))
 afterAll(() => rmSync(home, { recursive: true, force: true }))
@@ -284,5 +284,75 @@ describe('citations', () => {
     expect(source?.body).toEqual({ ok: true, text: 'It fell' })
     const outside = answer('GET', '/api/source', q({ project: dir, path: '../../etc/hosts', from: '0', to: '5' }), null, null)
     expect(outside?.status).toBe(404)
+  })
+})
+
+describe('the picture door', () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+
+  function made(name: string): string {
+    const dir = project(name)
+    createDeck(dir, 'Talk')
+    mkdirSync(join(dir, 'figures'))
+    writeFileSync(join(dir, 'figures', 'one.png'), PNG)
+    writeFileSync(join(dir, 'figures', 'drawn.svg'), SVG)
+    writeFileSync(join(dir, '.env'), 'TOKEN=1')
+    return dir
+  }
+  const ask = (query: Record<string, string>, header: string | null = null) => answer('GET', '/api/asset', q(query), null, header)
+
+  test('it answers only the page that holds this process’s ticket, in the address or the header', () => {
+    const dir = made('asset-ticket')
+    const picture = { project: dir, path: 'figures/one.png' }
+    for (const reply of [ask(picture), ask({ ...picture, ticket: 'not-the-ticket' }), ask(picture, 'not-the-ticket')]) {
+      expect(reply?.status).toBe(403)
+      expect(reply?.raw).toBeUndefined()
+      expect((reply?.body as { refused?: string }).refused).toBe('ticket')
+    }
+    expect(ask({ ...picture, ticket: TICKET })?.status).toBe(200)
+    expect(ask(picture, TICKET)?.status).toBe(200)
+    expect(answer('POST', '/api/asset', none, { ...picture }, TICKET)?.status).toBe(405)
+  })
+
+  test('a picture is sent as its own type, inert when opened on its own, and kept for a minute', () => {
+    const dir = made('asset-headers')
+    const png = ask({ project: dir, path: 'figures/one.png', ticket: TICKET })
+    expect(png?.raw).toEqual({ bytes: PNG, type: 'image/png' })
+    expect(png?.body).toBeNull()
+    const svg = ask({ project: dir, path: 'figures/drawn.svg', ticket: TICKET })
+    expect(svg?.raw?.type).toBe('image/svg+xml')
+    for (const reply of [png, svg]) {
+      expect(reply?.headers).toEqual({
+        'cache-control': 'private, max-age=60',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        'cross-origin-resource-policy': 'same-origin',
+        'content-disposition': 'attachment',
+      })
+      expect(reply?.headers).toBe(PICTURE_HEADERS)
+    }
+  })
+
+  test('everything it will not serve is the same 404, with nothing of the file in it', () => {
+    const dir = made('asset-refusals')
+    const elsewhere = project('asset-no-decks')
+    writeFileSync(join(elsewhere, 'one.png'), PNG)
+    const refusals: Record<string, string>[] = [
+      { project: dir, path: '.env' },
+      { project: dir, path: '../asset-no-decks/one.png' },
+      { project: dir, path: join(dir, 'figures', 'one.png') },
+      { project: dir, path: 'figures/missing.png' },
+      { project: dir },
+      { path: 'figures/one.png' },
+      /* A directory that is nobody's deck project is not read through this door. */
+      { project: elsewhere, path: 'one.png' },
+      { project: '/', path: 'etc/hosts' },
+    ]
+    for (const query of refusals) {
+      const reply = ask({ ...query, ticket: TICKET })
+      expect([query, reply?.status, reply?.raw, reply?.headers]).toEqual([query, 404, undefined, undefined])
+      expect(reply?.body).toEqual({ ok: false, error: 'There is no such picture in this project.' })
+    }
   })
 })

@@ -2,6 +2,7 @@ import { Printer } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { PictureProject } from '@/slides/markdown'
 import { SLIDE_HEIGHT, SlideFace, slideWidth } from '@/slides/slide-view'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 
@@ -89,13 +90,15 @@ export function PrintView({
           Print
         </Button>
       </div>
-      <div className="print-deck flex flex-col items-center gap-6 p-6">
-        {deck.slides.map((slide, index) => (
-          <div key={index} data-testid="print-slide" className="print-slide shrink-0" style={{ width, height: SLIDE_HEIGHT }}>
-            <SlideFace slide={slide} />
-          </div>
-        ))}
-      </div>
+      <PictureProject.Provider value={project}>
+        <div className="print-deck flex flex-col items-center gap-6 p-6">
+          {deck.slides.map((slide, index) => (
+            <div key={index} data-testid="print-slide" className="print-slide shrink-0" style={{ width, height: SLIDE_HEIGHT }}>
+              <SlideFace slide={slide} />
+            </div>
+          ))}
+        </div>
+      </PictureProject.Provider>
     </div>
   )
 }
