@@ -355,4 +355,38 @@ describe('windows of their own', () => {
     /* Among the document's styles: the protocol's cover keeps one of its own in <head>. */
     expect([...document.querySelectorAll('style')].map((one) => one.textContent).join('\n')).toContain('@page { size: 1280px 720px; margin: 0; }')
   })
+
+  /* Pictures: every place a slide is drawn asks this app's own door, for the project that place was told. */
+  const PICTURED = `${LINKED}\n---\n\n<!-- layout: image -->\n![a bridge](figures/bridge.png)\n`
+  const DOOR = './api/asset?project=%2Fwork%2Fthesis&path=figures%2Fbridge.png'
+  const pictures = (within: ParentNode = document) => [...within.querySelectorAll('img')].map((img) => img.getAttribute('src'))
+
+  test('a picture is fetched from the project on the strip, in the preview and on the stage', async () => {
+    ;(window as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM.setURL('http://127.0.0.1:7990/app')
+    drawFollowing(PICTURED)
+    await waitFor(() => expect(editor().value).toBe(PICTURED))
+    /* The strip draws every slide. */
+    await waitFor(() => expect(pictures()).toEqual([DOOR]))
+    fireEvent.keyDown(window, { key: 'End' })
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    fireEvent.keyDown(window, { key: 'End' })
+    await waitFor(() => expect(pictures(screen.getByTestId('stage'))).toEqual([DOOR]))
+    expect(pictures().every((src) => src === DOOR)).toBe(true)
+  })
+
+  test('the presenter view and the print view, with no host, take the project from their address', async () => {
+    const fake = fakeDecks({}, { text: PICTURED })
+    const presenter = render(<PresenterView project="/work/thesis" slug="defence" decks={fake.decks} />)
+    await screen.findByRole('region', { name: 'notes' })
+    await fake.talk({ index: 2, blank: false, at: 5 })
+    await waitFor(() => expect(pictures(screen.getByRole('region', { name: 'next slide' }))).toEqual([DOOR]))
+    await fake.talk({ index: 3, blank: false, at: 6 })
+    await waitFor(() => expect(pictures(screen.getByRole('region', { name: 'current slide' }))).toEqual([DOOR]))
+    presenter.unmount()
+
+    let printed = 0
+    render(<PrintView project="/work/thesis" slug="defence" decks={fake.decks} print={() => printed++} ready={() => Promise.resolve()} />)
+    await waitFor(() => expect(printed).toBe(1))
+    expect(pictures()).toEqual([DOOR])
+  })
 })

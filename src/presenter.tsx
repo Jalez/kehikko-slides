@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, RotateCcw, Square } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { PictureProject } from '@/slides/markdown'
 import { SlideView } from '@/slides/slide-view'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 
@@ -122,32 +123,34 @@ export function PresenterView({
           </Button>
         </div>
       </header>
-      <div className="grid min-h-0 flex-1 grid-cols-[3fr_2fr] gap-3">
-        <section aria-label="current slide" className="bg-muted/40 min-h-0 rounded-md p-2">
-          {current && !position.blank ? (
-            <SlideView slide={current} aspect={deck.aspect} />
-          ) : (
-            <div className="flex size-full items-center justify-center rounded bg-black text-xs text-white/60">blank</div>
-          )}
-        </section>
-        <div className="flex min-h-0 flex-col gap-3">
-          <section aria-label="next slide" className="bg-muted/40 shrink-0 rounded-md p-2">
-            <p className="text-muted-foreground mb-1 text-[11px]">Next</p>
-            {next ? (
-              <SlideView slide={next} aspect={deck.aspect} fit="width" />
+      <PictureProject.Provider value={project}>
+        <div className="grid min-h-0 flex-1 grid-cols-[3fr_2fr] gap-3">
+          <section aria-label="current slide" className="bg-muted/40 min-h-0 rounded-md p-2">
+            {current && !position.blank ? (
+              <SlideView slide={current} aspect={deck.aspect} />
             ) : (
-              <p className="text-muted-foreground py-6 text-center text-xs">The end of the deck.</p>
+              <div className="flex size-full items-center justify-center rounded bg-black text-xs text-white/60">blank</div>
             )}
           </section>
-          <section aria-label="notes" className="min-h-0 flex-1 overflow-y-auto rounded-md border p-3">
-            {current?.notes ? (
-              <p className="text-base leading-relaxed whitespace-pre-wrap">{current.notes}</p>
-            ) : (
-              <p className="text-muted-foreground text-xs">No notes for this slide.</p>
-            )}
-          </section>
+          <div className="flex min-h-0 flex-col gap-3">
+            <section aria-label="next slide" className="bg-muted/40 shrink-0 rounded-md p-2">
+              <p className="text-muted-foreground mb-1 text-[11px]">Next</p>
+              {next ? (
+                <SlideView slide={next} aspect={deck.aspect} fit="width" />
+              ) : (
+                <p className="text-muted-foreground py-6 text-center text-xs">The end of the deck.</p>
+              )}
+            </section>
+            <section aria-label="notes" className="min-h-0 flex-1 overflow-y-auto rounded-md border p-3">
+              {current?.notes ? (
+                <p className="text-base leading-relaxed whitespace-pre-wrap">{current.notes}</p>
+              ) : (
+                <p className="text-muted-foreground text-xs">No notes for this slide.</p>
+              )}
+            </section>
+          </div>
         </div>
-      </div>
+      </PictureProject.Provider>
       <footer className="flex items-center justify-center gap-2">
         <Button
           variant="outline"

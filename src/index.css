@@ -270,6 +270,26 @@
     object-fit: contain;
     border-radius: 12px;
   }
+  /* a picture that did not load: a box where it would be, saying what it was */
+  .slide-picture-missing {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 320px;
+    max-width: 100%;
+    min-height: 180px;
+    padding: 24px 40px;
+    border: 4px dashed var(--border);
+    border-radius: 16px;
+    font-size: 28px;
+    color: var(--muted-foreground);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .slide-picture .slide-picture-missing {
+    flex: 1;
+    align-self: stretch;
+  }
   .slide-caption {
     font-size: 26px;
     color: var(--muted-foreground);

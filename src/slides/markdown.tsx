@@ -1,23 +1,71 @@
-import { memo } from 'react'
+import { createContext, memo, useContext, useState, type ComponentProps } from 'react'
 import Markdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
+import { ticket } from 'kehikot-module-protocol/client'
 import type { PluggableList } from 'unified'
 
 import { CITE_HREF, CiteMark } from './citations.tsx'
 
 /**
+ * The project the slides on screen belong to, for the pictures they name.
+ * Null where nothing has said (a slide drawn on its own, a deck opened with
+ * no project), and then a path is used as written.
+ */
+export const PictureProject = createContext<string | null>(null)
+
+/**
  * Where a picture a slide names is fetched from. A URL (`https:`, `data:`, an
  * absolute `/…`) is used as written; anything else is a path relative to the
- * project.
- *
- * TODO(assets): serve project files through the slides store and map a
- * project-relative path to that door here. Until then the path is used as is.
+ * project, served by this app's own `/api/asset` door. That door is behind the
+ * page's ticket, which an `<img>` can only carry in its address.
  */
-export function assetUrl(path: string): string {
-  return path
+export function assetUrl(path: string, project: string | null = null, carried: string = ticket()): string {
+  if (!project) return path
+  return `./api/asset?${new URLSearchParams(carried ? { project, path, ticket: carried } : { project, path })}`
+}
+
+/** How long a picture that did not load is left alone before a newly drawn slide asks for it again. */
+const ASK_AGAIN_MS = 10_000
+/** When each address last failed, so the stage, the strip and the next turn of the slide do not each ask again. */
+const failedAt = new Map<string, number>()
+const failedLately = (src: string) => Date.now() - (failedAt.get(src) ?? -Infinity) < ASK_AGAIN_MS
+
+/** A picture on a slide, from the project when its path is relative to it. */
+function Picture({ src, ...rest }: ComponentProps<'img'>) {
+  const project = useContext(PictureProject)
+  const from = typeof src === 'string' && isProjectPath(src) ? assetUrl(src, project) : src
+  /* Keyed by the address: whether it failed is a fact about that address, not about this place on the slide. */
+  return <Fetched key={typeof from === 'string' ? from : ''} {...rest} src={from} written={typeof src === 'string' ? src : ''} />
+}
+
+/**
+ * One that is missing or refused is drawn as a box with its alt text (or the
+ * path as written, when it has none) where the picture would be, and is not
+ * asked for again by this element.
+ */
+function Fetched({ src, alt, written, ...rest }: ComponentProps<'img'> & { written: string }) {
+  const [gone, setGone] = useState(() => typeof src === 'string' && failedLately(src))
+  if (gone) {
+    return (
+      <span role="img" aria-label={alt || 'missing picture'} data-testid="picture-missing" className="slide-picture-missing">
+        {alt || written}
+      </span>
+    )
+  }
+  return (
+    <img
+      {...rest}
+      src={src}
+      alt={alt ?? ''}
+      onError={() => {
+        if (typeof src === 'string') failedAt.set(src, Date.now())
+        setGone(true)
+      }}
+    />
+  )
 }
 
 /** Is this a project-relative path rather than a URL? */
@@ -30,9 +78,7 @@ const REMARK: PluggableList = [remarkGfm, remarkMath]
 const REHYPE: PluggableList = [rehypeKatex, [rehypeHighlight, { detect: false }]]
 
 const COMPONENTS: Components = {
-  img: ({ src, alt, node: _node, ...rest }) => (
-    <img {...rest} src={typeof src === 'string' && isProjectPath(src) ? assetUrl(src) : src} alt={alt ?? ''} />
-  ),
+  img: ({ node: _node, ...rest }) => <Picture {...rest} />,
   a: ({ node: _node, href, ...rest }) =>
     typeof href === 'string' && href.startsWith(CITE_HREF) ? (
       <CiteMark label={href.slice(CITE_HREF.length)} />

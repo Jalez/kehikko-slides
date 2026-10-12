@@ -41,6 +41,11 @@ export const PATHS = {
   citations: '/api/citations',
   /** GET ?project&path&from&to — the exact words of a project file between two byte offsets: {@link SourceReply}. */
   source: '/api/source',
+  /**
+   * GET ?project&path&ticket — the bytes of a picture a slide names by a project-relative path. Not JSON, and behind
+   * the page's ticket, in the address because an `<img>` sends no header.
+   */
+  asset: '/api/asset',
 } as const
 
 export interface Refusal {
