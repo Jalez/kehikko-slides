@@ -23,7 +23,7 @@ import type {
  * The decks `/api`, as the page calls it — the only file in the page that
  * knows a URL. Everything else takes a `Decks`, so a test hands the screen a
  * fake. The protocol's `ask` carries the ticket printed into the page on every
- * write, and a failure is thrown as its sentence: the server's own words, "not
+ * write, and here on every read, and a failure is thrown as its sentence: the server's own words, "not
  * answering", or "this page is older than its server" (and then it reloads).
  */
 /** What a save came to: written at a new version, or refused because somebody wrote first. */
@@ -58,7 +58,8 @@ export interface Decks {
   source(project: string, path: string, from: number, to: number): Promise<string>
 }
 
-const get = async <T>(path: string, query: Record<string, string>) => answered(await ask<T>(path, { query }))
+/* The reads carry the ticket too: the doors under /api/ answer only this app's own page. */
+const get = async <T>(path: string, query: Record<string, string>) => answered(await ask<T>(path, { query, ticket: true }))
 const send = async <T>(method: string, path: string, body: unknown) => answered(await ask<T>(path, { method, body }))
 
 export const decks: Decks = {

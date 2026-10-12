@@ -39,6 +39,21 @@ describe('the decks wire', () => {
     expect(serverStanding()).toBe('up')
   })
 
+  test('a read carries the page’s ticket too, and the doors answer it', async () => {
+    let carried = ''
+    reply = (url, init) => {
+      carried = (init.headers as Record<string, string>)['x-module-ticket'] ?? ''
+      const at = new URL(url, 'http://localhost')
+      const said = answer(String(init.method), at.pathname, at.searchParams, null, carried)
+      return json(said?.status ?? 500, said?.body)
+    }
+    await expect(decks.source('/nowhere/at/all', 'a.tex', 0, 1)).rejects.toThrow()
+    expect(carried).toBe(TICKET)
+    expect(serverStanding()).toBe('up')
+    await expect(decks.list('/nowhere/at/all')).rejects.toThrow()
+    expect(carried).toBe(TICKET)
+  })
+
   test('a page older than its server: the refusal is marked, and the wire says so', async () => {
     reply = (_url, init) => {
       const said = answer('POST', '/api/decks', new URLSearchParams(), JSON.parse(String(init.body)), 'a-ticket-from-before-the-restart')

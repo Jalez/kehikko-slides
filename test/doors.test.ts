@@ -64,12 +64,12 @@ describe('the doors', () => {
 
   test('a path that is not ours is left to Vite, and an unknown /api path is refused', () => {
     expect(answer('GET', '/src/main.tsx', none, null, null)).toBeNull()
-    expect(answer('GET', '/api/nothing', none, null, null)?.status).toBe(404)
+    expect(answer('GET', '/api/nothing', none, null, TICKET)?.status).toBe(404)
   })
 })
 
 describe('the HTTP api', () => {
-  test('every write needs this page’s ticket; reads do not', () => {
+  test('every door under /api needs this page’s ticket, the reads with the writes', () => {
     const dir = project('ticket')
     const writes: [string, string, Record<string, unknown>][] = [
       ['POST', '/api/decks', { project: dir, title: 'T' }],
@@ -83,7 +83,22 @@ describe('the HTTP api', () => {
       expect(answer(method, path, none, body, null)?.status).toBe(403)
       expect(answer(method, path, none, body, 'not-the-ticket')?.status).toBe(403)
     }
-    expect(answer('GET', '/api/decks', q({ project: dir }), null, null)?.status).toBe(200)
+    const reads: [string, Record<string, string>][] = [
+      ['/api/decks', { project: dir }],
+      ['/api/deck', { project: dir, slug: 't' }],
+      ['/api/history', { project: dir, slug: 't' }],
+      ['/api/citations', { project: dir, slug: 't' }],
+      ['/api/source', { project: dir, path: 'a.tex', from: '0', to: '1' }],
+      ['/api/nothing', {}],
+    ]
+    for (const [path, query] of reads) {
+      for (const carried of [null, 'not-the-ticket']) {
+        const reply = answer('GET', path, q(query), null, carried)
+        expect([path, reply?.status]).toEqual([path, 403])
+        expect((reply?.body as { refused?: string }).refused).toBe('ticket')
+      }
+    }
+    expect(answer('GET', '/api/decks', q({ project: dir }), null, TICKET)?.status).toBe(200)
   })
 
   test('create, read, save, conflict, retitle, delete', () => {
@@ -91,7 +106,7 @@ describe('the HTTP api', () => {
     const created = answer('POST', '/api/decks', none, { project: dir, title: 'My talk', epic: 'e' }, TICKET)
     expect(created?.body).toMatchObject({ ok: true, slug: 'my-talk' })
 
-    const read = answer('GET', '/api/deck', q({ project: dir, slug: 'my-talk' }), null, null)?.body as { version: string; text: string }
+    const read = answer('GET', '/api/deck', q({ project: dir, slug: 'my-talk' }), null, TICKET)?.body as { version: string; text: string }
     expect(read.text).toContain('title: My talk')
 
     const saved = answer('PUT', '/api/deck', none, { project: dir, slug: 'my-talk', text: DECK, base: read.version }, TICKET)
@@ -102,15 +117,15 @@ describe('the HTTP api', () => {
     expect(typeof (stale?.body as { error: string }).error).toBe('string')
 
     expect(answer('PATCH', '/api/deck', none, { project: dir, slug: 'my-talk', title: 'Renamed' }, TICKET)?.status).toBe(200)
-    const list = answer('GET', '/api/decks', q({ project: dir }), null, null)?.body as { decks: unknown[] }
+    const list = answer('GET', '/api/decks', q({ project: dir }), null, TICKET)?.body as { decks: unknown[] }
     expect(list.decks).toMatchObject([{ slug: 'my-talk', title: 'Renamed', slides: 3 }])
 
     expect(answer('DELETE', '/api/deck', none, { project: dir, slug: 'my-talk' }, TICKET)?.status).toBe(200)
-    expect(answer('GET', '/api/deck', q({ project: dir, slug: 'my-talk' }), null, null)?.status).toBe(404)
+    expect(answer('GET', '/api/deck', q({ project: dir, slug: 'my-talk' }), null, TICKET)?.status).toBe(404)
   })
 
   test('refusals are sentences', () => {
-    const reply = answer('GET', '/api/decks', q({ project: 'relative' }), null, null)
+    const reply = answer('GET', '/api/decks', q({ project: 'relative' }), null, TICKET)
     expect(reply?.status).toBe(400)
     expect((reply?.body as { error: string }).error).toMatch(/absolute path/)
   })
@@ -120,7 +135,7 @@ describe('the HTTP api', () => {
     tool('create_deck', { project: dir, title: 'Deck', agent: 'claude' })
     const before = (readDeck(dir, 'deck') as { value: { text: string } }).value.text
     tool('write_deck', { project: dir, deck: 'deck', markdown: DECK, summary: 'drafted', agent: 'claude' })
-    const entries = (answer('GET', '/api/history', q({ project: dir, slug: 'deck' }), null, null)?.body as { entries: { id: string; summary: string }[] }).entries
+    const entries = (answer('GET', '/api/history', q({ project: dir, slug: 'deck' }), null, TICKET)?.body as { entries: { id: string; summary: string }[] }).entries
     expect(entries.map((one) => one.summary)).toEqual(['drafted', 'created the deck "Deck"'])
     expect(answer('POST', '/api/undo', none, { project: dir, slug: 'deck', id: entries[0]!.id }, TICKET)?.status).toBe(200)
     expect((readDeck(dir, 'deck') as { value: { text: string } }).value.text).toBe(before)
@@ -276,14 +291,28 @@ describe('citations', () => {
   test('the page reads every slide\'s citations, and the exact words of a selection', () => {
     const dir = cited('cite-page')
     tool('cite_slide', { project: dir, deck: 'd', index: 0, path: 'ch/4.tex', quote: 'It fell', at: '3.51' })
-    const reply = answer('GET', '/api/citations', q({ project: dir, slug: 'd' }), null, null)
+    const reply = answer('GET', '/api/citations', q({ project: dir, slug: 'd' }), null, TICKET)
     const slides = (reply?.body as { slides: { label: string; status: string; at: { from: number; line: number } }[][] }).slides
     expect(slides[0]![0]).toMatchObject({ label: '1', status: 'holds', at: { line: 4 } })
     const from = slides[0]![0]!.at.from
-    const source = answer('GET', '/api/source', q({ project: dir, path: 'ch/4.tex', from: String(from), to: String(from + 7) }), null, null)
+    const source = answer('GET', '/api/source', q({ project: dir, path: 'ch/4.tex', from: String(from), to: String(from + 7) }), null, TICKET)
     expect(source?.body).toEqual({ ok: true, text: 'It fell' })
-    const outside = answer('GET', '/api/source', q({ project: dir, path: '../../etc/hosts', from: '0', to: '5' }), null, null)
+    const outside = answer('GET', '/api/source', q({ project: dir, path: '../../etc/hosts', from: '0', to: '5' }), null, TICKET)
     expect(outside?.status).toBe(404)
+  })
+
+  test('a passage is read from a project with decks, and never from a dot-file in it', () => {
+    const dir = cited('cite-own')
+    writeFileSync(join(dir, '.env'), 'TOKEN=1\n')
+    const bare = project('cite-bare')
+    writeFileSync(join(bare, 'notes.txt'), 'some words\n')
+    const read = (query: Record<string, string>) => answer('GET', '/api/source', q({ from: '0', to: '5', ...query }), null, TICKET)
+    expect(read({ project: dir, path: 'ch/4.tex' })?.status).toBe(200)
+    expect(read({ project: dir, path: '.env' })?.status).toBe(404)
+    expect(read({ project: bare, path: 'notes.txt' })?.status).toBe(404)
+    expect(read({ project: '/', path: 'etc/hosts' })?.status).not.toBe(200)
+    /* An agent's citation is confined the same way. */
+    expect(tool('cite_slide', { project: dir, deck: 'd', index: 0, path: '.env', quote: 'TOKEN=1' })).toMatchObject({ error: true, text: expect.stringContaining('not a readable file') })
   })
 })
 

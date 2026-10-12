@@ -200,18 +200,27 @@ function removeDeck(project: string | null | undefined, slug: string): Result<nu
 const MAX_CITED_BYTES = 5_000_000
 
 /**
- * A project file's text, for finding a quote in, or null when it cannot be
- * read: missing, not a file, too large, or resolving outside the project. The
- * path is a deck's, so it is a stranger's string: confined like a deck file.
+ * A project file's text, for finding a quote in, or null when it is not read.
+ * The path is a deck's, and a deck can arrive with a cloned project, so it is a
+ * stranger's string. Refused, all alike:
+ *
+ * - an absolute path, `..`, and any dot-file or dot-folder on the way, as
+ *   written AND as resolved, except a paper's own (`.kehikot/paper/…`), which
+ *   is what a slide cites;
+ * - anything resolving outside the project, through a link at any segment;
+ * - what is missing, not a file, or over {@link MAX_CITED_BYTES}.
  */
 export function citedText(root: string, path: string): string | null {
-  if (!path || isAbsolute(path) || path.replace(/\\/g, '/').split('/').includes('..')) return null
-  const file = join(root, path)
+  if (!path || path.length > 1000 || path.includes('\0') || isAbsolute(path)) return null
+  const written = path.replace(/\\/g, '/').replace(/^(\.\/)+/, '')
+  if (hidden(written.split('/'))) return null
   try {
-    if (escapes(root, file)) return null
-    const stat = statSync(file)
+    /* Every segment resolved, so a folder that is a link is judged by where it leads. */
+    const real = realpathSync(join(root, written))
+    if (!within(root, real) || real === root || hidden(relative(root, real).split('/'))) return null
+    const stat = statSync(real)
     if (!stat.isFile() || stat.size > MAX_CITED_BYTES) return null
-    return readFileSync(file, 'utf8')
+    return readFileSync(real, 'utf8')
   } catch {
     return null
   }
@@ -250,7 +259,7 @@ const PICTURES: Record<string, { type: string; looks: (bytes: Uint8Array) => boo
   },
 }
 
-/** Where a paper's figures are kept: the one dot-folder a picture is served from. */
+/** Where a paper and its figures are kept: the one dot-folder a slide's picture or citation is read from. */
 const PAPER_FIGURES = ['.kehikot', 'paper']
 
 /** Does this path go through a dot-file or dot-folder (`.git`, `.env`, `..`) other than a paper's own? */
@@ -300,13 +309,19 @@ export const MAX_CITED_SLICE = 4000
 /**
  * The exact words between two byte offsets of a project file: what a reader
  * selected in the paper, as the source has it rather than as it was drawn.
+ *
+ * Only for a project that has a slides folder: a deck is the only thing a
+ * passage is cited into, so no other directory is read through this door. The
+ * file itself is confined as {@link citedText} says.
  */
 export function citedSlice(project: string | null | undefined, path: string, from: number, to: number): Result<string> {
-  const root = projectRoot(project)
-  if (!root.ok) return root
+  const slides = slidesDir(project, false)
+  if (!slides.ok) return slides
+  if (!existsSync(slides.value.dir)) return { ok: false, status: 404, error: 'This project has no decks, so there is nothing to cite into.' }
+  const root = slides.value.root
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from) return { ok: false, error: 'from and to are byte offsets, to after from.' }
   if (to - from > MAX_CITED_SLICE) return { ok: false, error: `That selection is longer than ${MAX_CITED_SLICE} bytes; cite a sentence or two.` }
-  const text = citedText(root.value, path)
+  const text = citedText(root, path)
   if (text === null) return { ok: false, status: 404, error: `"${path.slice(0, 200)}" is not a readable file inside this project.` }
   const all = Buffer.from(text, 'utf8')
   if (to > all.length) return { ok: false, error: 'That range runs past the end of the file; the paper may have changed since it was selected.' }
