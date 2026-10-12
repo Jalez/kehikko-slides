@@ -116,8 +116,8 @@ export function fakeDecks(
       talkers.add(onState)
       return () => talkers.delete(onState)
     },
-    followPointer(project, slug, onPoint) {
-      record('followPointer', project, slug)
+    followPointer(project, slug, onPoint, presenting) {
+      record('followPointer', project, slug, presenting)
       pointers.add(onPoint)
       onPoint({ slug, index: 0, at: 0 })
       return () => pointers.delete(onPoint)

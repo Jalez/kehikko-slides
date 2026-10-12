@@ -196,8 +196,10 @@ export function Workspace({
   /* A slide pointed at from outside this page: an agent's show_slide on the door, or another module's passage
      naming this deck's file. Gone to once, as a move nobody here made — so it is not published to the paper — and
      drawn though the picked parts leave it out, as the slide in hand is. What the door held when this page
-     arrived was shown to an earlier page, and is not gone to. */
+     arrived was shown to an earlier page, and is not gone to. A talk is not turned from outside: while presenting
+     the door is told so and sends nothing, and a pointing that arrives anyway is dropped, not kept for afterwards. */
   const [pointed, setPointed] = useState<number | null>(null)
+  const presenting = show.presenting !== null
   useEffect(() => {
     let seen: number | null = null
     return decks.followPointer(project, slug, (state) => {
@@ -205,8 +207,8 @@ export function Workspace({
       if (state.at === seen) return
       seen = state.at
       if (!arriving && state.at !== 0) setPointed(state.index)
-    })
-  }, [decks, project, slug])
+    }, presenting)
+  }, [decks, project, slug, presenting])
   const passed = passageKey(host.passage)
   const answered = useRef<string | null>(null)
   useEffect(() => {
@@ -219,7 +221,7 @@ export function Workspace({
   useLayoutEffect(() => {
     if (pointed === null || !ready) return
     setPointed(null)
-    if (pointed === current || pointed >= deck.slides.length) return
+    if (presenting || pointed === current || pointed >= deck.slides.length) return
     setHeld(narrowing.focused && !focus.inFocus(anchorsNow(pointed)) ? pointed : null)
     steer(pointed)
     goTo(pointed)

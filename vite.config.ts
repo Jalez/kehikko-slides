@@ -13,7 +13,7 @@ import { ID, PREFERRED_PORT } from './manifest.ts'
  *   registration true. So no `server.port` here.
  * - `doors()` serves everything that is not a source file from this one process: the manifest, the
  *   page at `/app` (and `/print`, the same document on a route of its own) with the write ticket
- *   and the build printed into it, the two server-sent-event doors through `stream`, and
+ *   and the build printed into it, the server-sent-event doors through `stream`, and
  *   `/healthz`, `/mcp` and `/api/*` through `answer`. A module is ONE ORIGIN; see the protocol's
  *   docs/module-plumbing.md.
  * - No `server.cors`: the manifest declares storage, so the page is same-origin and a permissive

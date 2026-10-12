@@ -32,7 +32,8 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     + 'talk, use the paper module’s `list_sections` and `read_paper`, then `create_deck` and `write_deck` with one or '
     + 'more slides per section and speaker notes after a `Notes:` line, and `link_slide` each slide to its section. '
     + '`edit_slide` changes one slide. `show_slide` turns the page to the slide you are talking about; it writes '
-    + 'nothing and says whether a Slides page is open to see it. Every write is kept in the deck’s history and the person can undo it, so give '
+    + 'nothing, counts slides from 0, and does not turn a talk. Another module points by setting the passage on the '
+    + 'deck’s file, with `page` counted from 1. Every write is kept in the deck’s history and the person can undo it, so give '
     + 'a one-line `summary` and your name as `agent`. Do not edit the .md files directly while the person is editing.',
   entry: '/app',
   modes: [{ id: 'slides', label: 'Slides', scope: 'epic' }],

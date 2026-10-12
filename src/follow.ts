@@ -109,16 +109,22 @@ export function deckPath(project: string, slug: string): string {
  * this deck's file, or names no slide of it. A module points at a slide the
  * way it points at the paper — the file and a byte range in it, here the
  * slide's own Markdown — or, with no range, by `page`: the slide's number
- * counting from 1, as the strip and the PDF number them.
+ * counting from 1, as the strip and the PDF number them. A place the deck
+ * does not have is not followed, rather than taken as the nearest slide.
+ *
+ * A passage is state, not an event: the same one set again after the person
+ * has turned away is not a new pointing (`passageKey`). A sender that means to
+ * point again changes the passage, or uses `show_slide`.
  */
 export function slidePointed(passage: PassageLike | null | undefined, project: string, slug: string, text: string): number | null {
   if (!passage || !samePath(passage.path, deckPath(project, slug))) return null
   if (typeof passage.from === 'number') {
     /* Bytes on the wire, characters in the editor. */
-    const before = new TextDecoder().decode(new TextEncoder().encode(text).slice(0, passage.from))
-    return slideAt(text, before.length)
+    const bytes = new TextEncoder().encode(text)
+    if (!Number.isInteger(passage.from) || passage.from < 0 || passage.from > bytes.length) return null
+    return slideAt(text, new TextDecoder().decode(bytes.slice(0, passage.from)).length)
   }
-  if (typeof passage.page !== 'number') return null
+  if (typeof passage.page !== 'number' || !Number.isInteger(passage.page)) return null
   return passage.page >= 1 && passage.page <= slideRanges(text).length ? passage.page - 1 : null
 }
 

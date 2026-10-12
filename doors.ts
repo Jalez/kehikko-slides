@@ -219,8 +219,13 @@ function tools() {
         'Turn the Slides page to one slide of a deck, so the person is looking at the slide you are talking about. '
         + 'A pointer, not an edit: nothing is written and nothing goes into the history, the person can turn away '
         + 'by going to another slide themselves, and the next show_slide is followed again. The answer says '
-        + 'whether a Slides page is open on that deck to see it; with none open, nothing was shown to anybody. '
-        + 'A slide that is not there is refused with the deck\'s own slide list.',
+        + 'how many open Slides pages on that deck the pointer was sent to; with none open, nothing was shown to '
+        + 'anybody, and a page that is presenting is not turned. `index` counts from 0, as read_deck numbers the '
+        + 'slides. A slide that is not there is refused with the deck\'s own slide list. '
+        + 'Another module, with no MCP call, points by setting the canvas passage on the deck\'s file '
+        + `(<project>/${KEHIKOT_DIR}/slides/<deck>.md): a byte range of its Markdown, or \`page\`, the slide's number `
+        + 'counting from 1. A passage is state, not an event: the same passage set again after the person has turned '
+        + 'away is not followed again, so to point again change the passage or use show_slide.',
       inputSchema: { type: 'object', properties: { ...PROJECT, ...DECK, ...INDEX }, required: ['project', 'deck', 'index'] },
     },
   ]
@@ -458,14 +463,22 @@ function call(name: string, args: Record<string, unknown>): string {
     const root = must(projectRoot(project), name)
     const slides = parseDeck(must(readDeck(project, slug), name).text, slug).slides
     const index = shownOf(args, slides, slug)
-    const { watching } = pointAt(root, slug, index)
+    const { watching, presenting } = pointAt(root, slug, index)
     const which = `slide ${index} of "${slug}" (${slideHeadline(slides[index]!) || 'empty'}; ${slides.length} in the deck)`
-    if (!watching) {
+    const pages = (count: number) => (count === 1 ? 'one open Slides page' : `${count} open Slides pages`)
+    if (!watching && !presenting) {
       return `No Slides page is open on "${slug}", so nobody was shown ${which}. Nothing was turned and nothing was written. `
         + 'Once the deck is open on the canvas, call show_slide again.'
     }
-    return `Showing ${which}. ${watching === 1 ? 'One Slides page is' : `${watching} Slides pages are`} open on this deck and `
-      + 'turned to it. Nothing was written; the person can turn away, and the next show_slide is followed again.'
+    if (!watching) {
+      return `"${slug}" is being presented, so it was not turned to ${which}: ${pages(presenting)} on this deck `
+        + `${presenting === 1 ? 'is' : 'are'} presenting, and a talk is not turned from outside. Nothing was written. `
+        + 'Call show_slide again once the talk is over.'
+    }
+    const talking = presenting === 1 ? 'one more is presenting and was not turned' : `${presenting} more are presenting and were not turned`
+    return `Pointed ${pages(watching)} on this deck at ${which}${presenting ? `; ${talking}` : ''}. `
+      + 'That is how many pages the pointer was sent to, not how many people saw it: a page may be hidden, or hold '
+      + 'unsaved text without that slide. Nothing was written; the person can turn away, and the next show_slide is followed again.'
   }
 
   throw new Error(`There is no tool "${name.slice(0, 60)}" here.`)
@@ -617,7 +630,8 @@ export function stream(
     const slug = query.get('slug') ?? ''
     const why = badSlug(slug)
     if (why) return { reply: bad(why) }
-    return { close: path === PATHS.present ? followTalk(root.value, slug, emit) : followPointer(root.value, slug, emit) }
+    if (path === PATHS.present) return { close: followTalk(root.value, slug, emit) }
+    return { close: followPointer(root.value, slug, emit, query.get('presenting') === '1') }
   }
   return null
 }

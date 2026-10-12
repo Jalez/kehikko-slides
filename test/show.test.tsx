@@ -74,7 +74,7 @@ describe('show_slide on the MCP door', () => {
 
     const shown = tool('show_slide', { project: dir, deck: 'd', index: 2 })
     expect(shown.error).toBe(false)
-    expect(shown.text).toMatch(/^Showing slide 2 of "d" \(Results; 3 in the deck\)\. One Slides page is open on this deck/)
+    expect(shown.text).toMatch(/^Pointed one open Slides page on this deck at slide 2 of "d" \(Results; 3 in the deck\)\. That is how many pages the pointer was sent to, not how many people saw it/)
     expect(seen[1]).toMatchObject({ slug: 'd', index: 2 })
 
     /* The same slide again is a new pointing: the person may have turned away in between. */
@@ -94,6 +94,25 @@ describe('show_slide on the MCP door', () => {
     const seen: PointerState[] = []
     const page = stream('GET', '/api/pointer', q({ project: dir, slug: 'd' }), (event) => seen.push(event as PointerState))
     expect(seen).toEqual([{ slug: 'd', index: 0, at: 0 }])
+    if (page && 'close' in page) page.close()
+  })
+
+  test('a page that is presenting is counted and not told, and the answer says the deck was not turned', () => {
+    const dir = drafted('presented')
+    const talk: PointerState[] = []
+    const stage = stream('GET', '/api/pointer', q({ project: dir, slug: 'd', presenting: '1' }), (event) => talk.push(event as PointerState))
+    const alone = tool('show_slide', { project: dir, deck: 'd', index: 2 })
+    expect(alone.error).toBe(false)
+    expect(alone.text).toMatch(/^"d" is being presented, so it was not turned to slide 2 of "d" \(Results; 3 in the deck\): one open Slides page on this deck is presenting/)
+
+    const seen: PointerState[] = []
+    const page = stream('GET', '/api/pointer', q({ project: dir, slug: 'd' }), (event) => seen.push(event as PointerState))
+    const both = tool('show_slide', { project: dir, deck: 'd', index: 1 })
+    expect(both.text).toMatch(/^Pointed one open Slides page on this deck at slide 1 of "d" \(The problem; 3 in the deck\); one more is presenting and was not turned\./)
+    expect(seen[1]).toMatchObject({ slug: 'd', index: 1 })
+    expect(talk).toEqual([{ slug: 'd', index: 0, at: 0 }])
+
+    if (stage && 'close' in stage) stage.close()
     if (page && 'close' in page) page.close()
   })
 
@@ -162,6 +181,26 @@ describe('a passage naming the deck’s file', () => {
     expect(slidePointed(pointing({ from: bytes(DECK, '## The problem'), to: bytes(DECK, '## Results') }), PROJECT, 'defence', DECK)).toBe(1)
   })
 
+  test('a place the deck does not have is refused, not taken as the nearest slide', () => {
+    const size = new TextEncoder().encode(DECK).length
+    const third = DECK.indexOf('---\n\n<!-- section: chapters/3.tex') + '---\n'.length
+    const at = (from: number) => slidePointed(pointing({ from, to: from }), PROJECT, 'defence', DECK)
+    expect(at(third - 1)).toBe(2)
+    expect(at(third)).toBe(2)
+    expect(at(0)).toBe(0)
+    expect(at(size - 1)).toBe(2)
+    expect(at(size)).toBe(2)
+    expect(at(size + 1)).toBeNull()
+    expect(at(-1)).toBeNull()
+    expect(at(1.5)).toBeNull()
+
+    const page = (number: number) => slidePointed(pointing({ page: number }), PROJECT, 'defence', DECK)
+    expect(page(0)).toBeNull()
+    expect(page(3)).toBe(2)
+    expect(page(4)).toBeNull()
+    expect(page(1.5)).toBeNull()
+  })
+
   test('another file, another deck, or no slide named: nothing is pointed at', () => {
     expect(slidePointed(null, PROJECT, 'defence', DECK)).toBeNull()
     expect(slidePointed(pointing({}), PROJECT, 'defence', DECK)).toBeNull()
@@ -225,6 +264,26 @@ describe('the page, pointed at a slide', () => {
     run.fake.point(7, 100)
     await pause(10)
     expect(position()).toBe('1 / 3')
+  })
+
+  test('a talk is not turned: while presenting neither a pointing nor a passage moves the slide, and neither is kept for afterwards', async () => {
+    const run = draw()
+    const told = () => run.fake.of('followPointer').at(-1)!.args[2]
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    expect(told()).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    await waitFor(() => expect(told()).toBe(true))
+    run.fake.point(2, 100)
+    run.read(pointing({ page: 2 }))
+    await pause(10)
+    expect(position()).toBe('1 / 3')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(told()).toBe(false))
+    await pause(10)
+    expect(position()).toBe('1 / 3')
+    run.fake.point(2, 101)
+    await waitFor(() => expect(heading()).toBe('Results'))
   })
 
   test('another module’s passage on the deck’s file brings its slide up, once', async () => {

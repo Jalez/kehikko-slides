@@ -31,7 +31,10 @@ export const PATHS = {
   watch: '/api/watch',
   /** GET ?project&slug — server-sent events of {@link PresentState}. POST {@link PresentMove}. */
   present: '/api/present',
-  /** GET ?project&slug — server-sent events of {@link PointerState}. Pointed over MCP (`show_slide`), never by a page. */
+  /**
+   * GET ?project&slug — server-sent events of {@link PointerState}. Pointed over MCP (`show_slide`), never by a page.
+   * `&presenting=1`: the page is giving a talk, and is counted but sent no pointing.
+   */
   pointer: '/api/pointer',
   /** GET ?project&slug — every slide's sources, looked for in their files: {@link CitationsReply}. */
   citations: '/api/citations',

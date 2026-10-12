@@ -184,23 +184,26 @@ export function moveTalk(root: string, slug: string, index: number, blank: boole
  * Pointing
  * ------------------------------------------------------------------ */
 
-const pointers = new Map<string, { state: PointerState; listeners: Set<Listener<PointerState>> }>()
+/* Each listener, with whether its page said it is presenting. */
+const pointers = new Map<string, { state: PointerState; listeners: Map<Listener<PointerState>, boolean> }>()
 
 /**
  * Listen for a deck being pointed at a slide. What is held is sent at once,
  * then every pointing. One listener is one page open on the deck, which is
- * how `pointAt` knows whether anybody saw. In memory only, and forgotten when
- * the last page leaves: a pointer is a gesture, not a place the deck is kept at.
+ * how `pointAt` knows how many it told. A page that is `presenting` is counted
+ * and not told: a talk is not turned from outside. In memory only, and
+ * forgotten when the last page leaves: a pointer is a gesture, not a place the
+ * deck is kept at.
  */
-export function followPointer(root: string, slug: string, listener: Listener<PointerState>): () => void {
+export function followPointer(root: string, slug: string, listener: Listener<PointerState>, presenting = false): () => void {
   const key = `${root}\0${slug}`
   let one = pointers.get(key)
   if (!one) {
-    one = { state: { slug, index: 0, at: 0 }, listeners: new Set() }
+    one = { state: { slug, index: 0, at: 0 }, listeners: new Map() }
     pointers.set(key, one)
   }
   const mine = one
-  mine.listeners.add(listener)
+  mine.listeners.set(listener, presenting)
   listener(mine.state)
   return () => {
     mine.listeners.delete(listener)
@@ -209,15 +212,21 @@ export function followPointer(root: string, slug: string, listener: Listener<Poi
 }
 
 /**
- * Point a deck at a slide, and say how many pages are open on it to see.
- * Nothing is written anywhere; with no page open nothing is kept either.
+ * Point a deck at a slide, and say how many open pages were told (`watching`)
+ * and how many were left alone because they are `presenting`. Nothing is
+ * written anywhere; with no page open nothing is kept either.
  */
-export function pointAt(root: string, slug: string, index: number): { state: PointerState; watching: number } {
+export function pointAt(root: string, slug: string, index: number): { state: PointerState; watching: number; presenting: number } {
   const one = pointers.get(`${root}\0${slug}`)
   /* Two pointings in one millisecond are still two: a page tells them apart by `at`. */
   const state = { slug, index, at: Math.max(Date.now(), (one?.state.at ?? 0) + 1) }
-  if (!one) return { state, watching: 0 }
+  if (!one) return { state, watching: 0, presenting: 0 }
   one.state = state
-  for (const listener of one.listeners) listener(state)
-  return { state, watching: one.listeners.size }
+  let watching = 0
+  for (const [listener, presenting] of one.listeners) {
+    if (presenting) continue
+    watching += 1
+    listener(state)
+  }
+  return { state, watching, presenting: one.listeners.size - watching }
 }
