@@ -4,9 +4,10 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { ticket } from 'kehikot-module-protocol/client'
+import { ask, ticket } from 'kehikot-module-protocol/client'
 import type { PluggableList } from 'unified'
 
+import { PATHS } from '../../deck/api.ts'
 import { CITE_HREF, CiteMark } from './citations.tsx'
 
 /**
@@ -32,6 +33,31 @@ const ASK_AGAIN_MS = 10_000
 /** When each address last failed, so the stage, the strip and the next turn of the slide do not each ask again. */
 const failedAt = new Map<string, number>()
 const failedLately = (src: string) => Date.now() - (failedAt.get(src) ?? -Infinity) < ASK_AGAIN_MS
+
+/** When the door was last asked whether this page's ticket still stands. */
+let knockedAt = -Infinity
+
+/**
+ * A picture from this app's own door did not load: ask the door whether this
+ * page's ticket still stands.
+ *
+ * An `<img>` cannot say why it failed. When the server has started again
+ * under an open page, every picture's address carries a ticket the new server
+ * refuses, and nothing else on the page asks anything for a while — so the
+ * deck sat there with boxes where its figures were until somebody reloaded.
+ * This asks the same door with the ticket in the header, through the
+ * protocol's `ask`: a refusal of the ticket is what tells the page it is older
+ * than its server, and the cover reloads it. A picture that is simply not
+ * there answers 404 and nothing changes. Asked at most once in a while,
+ * however many pictures a slide has.
+ */
+export function knock(src: string): void {
+  if (!src.startsWith(`.${PATHS.asset}?`) || Date.now() - knockedAt < ASK_AGAIN_MS) return
+  knockedAt = Date.now()
+  void ask(PATHS.asset, { query: { path: '' }, ticket: true }).catch(() => {
+    /* Nothing answered: `ask` has already said so to whatever draws the cover. */
+  })
+}
 
 /** A picture on a slide, from the project when its path is relative to it. */
 function Picture({ src, ...rest }: ComponentProps<'img'>) {
@@ -61,7 +87,10 @@ function Fetched({ src, alt, written, ...rest }: ComponentProps<'img'> & { writt
       src={src}
       alt={alt ?? ''}
       onError={() => {
-        if (typeof src === 'string') failedAt.set(src, Date.now())
+        if (typeof src === 'string') {
+          failedAt.set(src, Date.now())
+          knock(src)
+        }
         setGone(true)
       }}
     />

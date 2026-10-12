@@ -151,12 +151,15 @@ export function fakeDecks(
 
 /** CodeMirror stands in as a textarea: same props, and it reports the caret on select. */
 export const jumps: number[] = []
+/** Every jump the screen asked of the editor, with whether it asked for the keyboard too. */
+export const jumped: { at: number; focus: boolean }[] = []
 export function FakeEditor({ value, onChange, onCaret, jump }: EditorProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     if (!jump || !ref.current) return
     ref.current.selectionStart = jump.at
     jumps.push(jump.at)
+    jumped.push({ at: jump.at, focus: jump.focus === true })
   }, [jump])
   return (
     <textarea

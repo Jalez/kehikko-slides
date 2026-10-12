@@ -71,15 +71,41 @@ export function linkedToReading(slide: Slide | undefined, project: string, readi
   return !!section && section.title === reading.title && samePath(absolute(project, section.path), reading.path)
 }
 
+/** Where a slide is in its deck, and what its anchor is read against. */
+export interface InDeck {
+  /** The project's directory: a slide names its files relative to it. */
+  project: string
+  /** The slide's place in the deck, from 0, and how many slides the deck has. */
+  index: number
+  count: number
+  /** Whether some part of the epic, picked or not, has a file. The protocol's `partsOfFile`. */
+  tied(file: string): boolean
+}
+
 /**
- * What ties a slide to the parts of the epic: the file of the section it is
- * linked to, and the file of each passage it cites. Several, so a slide is in
- * a ticked part when any one of them is; a slide with neither belongs to the
- * deck as a whole and is in no part.
+ * What ties a slide to the parts of the epic: THE anchor function of this
+ * module, and the only thing it gives the protocol's rule to compare.
+ *
+ * **By its source.** The file of the section the slide is linked to, and the
+ * file of each passage it cites: `{ file }`, several, so a slide is in a
+ * picked part when any one of them is.
+ *
+ * **The title and the closing slide are the deck's own.** The first slide and
+ * the last, when nothing ties them to a part — they are linked to nothing and
+ * cite nothing, or only what no part of the epic has (the paper's front
+ * matter, usually) — are about the whole of what the deck presents:
+ * `{ whole: true }`, part of every part. A talk on one chapter still opens
+ * with its title and ends with its closing slide.
+ *
+ * Any other slide tied to no part answers its files, or nothing, and is in
+ * none: hidden under a pick, like anything that belongs to the epic as a
+ * whole, and back when nothing is picked.
  */
-export function anchorsOf(slide: Slide, project: string): Anchor[] {
-  const files = [...(slide.section ? [slide.section.path] : []), ...slide.sources.map((source) => source.path)]
-  return files.map((path) => ({ file: absolute(project, path) }))
+export function anchorOf(slide: Slide, at: InDeck): Anchor[] {
+  const files = [...(slide.section ? [slide.section.path] : []), ...slide.sources.map((source) => source.path)].map((path) => absolute(at.project, path))
+  const ends = at.index === 0 || at.index === at.count - 1
+  if (ends && !files.some((file) => at.tied(file))) return [{ whole: true }]
+  return files.map((file) => ({ file }))
 }
 
 /** The passage that turns the paper to a slide's section. */
