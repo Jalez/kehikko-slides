@@ -72,12 +72,19 @@ export function linkedToReading(slide: Slide | undefined, project: string, readi
 }
 
 /**
- * What ties a slide to the parts of the epic: the file of the section it is
- * linked to, and the file of each passage it cites. Several, so a slide is in
- * a ticked part when any one of them is; a slide with neither belongs to the
- * deck as a whole and is in no part.
+ * What ties a slide to the parts of the epic: THE anchor function of this
+ * module, and the only thing it gives the protocol's rule to compare.
+ *
+ * By its source: the file of the section the slide is linked to, and the file
+ * of each passage it cites — `{ file }`, several, so a slide is in a picked
+ * part when any one of them is.
+ *
+ * A slide with neither — a title slide, a closing one — answers nothing. It
+ * belongs to the deck as a whole and to no part: shown when nothing is
+ * picked, hidden under a pick, like the paper's own front matter and like
+ * anything in any module that is tied to no part. It is not `{ whole: true }`.
  */
-export function anchorsOf(slide: Slide, project: string): Anchor[] {
+export function anchorOf(slide: Slide, project: string): Anchor[] {
   const files = [...(slide.section ? [slide.section.path] : []), ...slide.sources.map((source) => source.path)]
   return files.map((path) => ({ file: absolute(project, path) }))
 }

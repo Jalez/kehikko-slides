@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 
 import { partsDeclaration, type EpicPart } from 'kehikot-module-protocol'
+import { useFocus } from 'kehikot-module-protocol/client/react'
 
 import { parseDeck } from '../deck/format.ts'
 import { MANIFEST } from '../manifest.ts'
 import { Screen } from '../src/app.tsx'
-import { emptySaid, narrowDeck, nearestShown, positionSaid, stepShown } from '../src/focus.ts'
-import { anchorsOf } from '../src/follow.ts'
+import { anchorsIn, narrowDeck, nearestShown, positionSaid, stepShown } from '../src/focus.ts'
 import type { Host } from '../src/wire/use-kehikot.ts'
-import { FakeEditor, caretAt, editor, fakeDecks, host, pause, preview, type } from './fakes.tsx'
+import { FakeEditor, caretAt, editor, fakeDecks, host, jumped, pause, preview, type } from './fakes.tsx'
 
 /**
  * The parts focus in a deck: it NARROWS to the slides of the ticked parts, as
@@ -25,7 +25,7 @@ const PAPER = `.kehikot/paper/${EPIC}`
 const PROJECT = '/work/thesis'
 
 /* Five slides: a title in no part, one linked into the introduction, one that cites the methods (and is linked
-   into the introduction), one linked into the methods, one linked to main.tex, which no part owns. */
+   into the introduction), one linked into the methods, one linked to main.tex, which no part has. */
 const DECK = `---
 title: Defence
 ---
@@ -56,17 +56,28 @@ Sources:
 ## In short
 `
 
-const parts = (...picked: string[]): EpicPart[] => [
-  { id: 'intro', heading: 'Introduction', refs: [], picked: picked.includes('intro'), files: ['chapters/intro.tex'] },
-  { id: 'methods', heading: 'Methods', refs: [], picked: picked.includes('methods'), files: ['chapters/methods.tex'] },
-  { id: 'results', heading: 'Results', refs: [], picked: picked.includes('results'), files: ['chapters/results.tex'] },
+/**
+ * The two ways a host says what a part has: only `files`, relative to the
+ * paper's folder (before protocol 1.2.0; app 0.1.16), or `documents`,
+ * relative to the project, with `files` still filled beside them (0.1.17).
+ */
+type Shape = 'files' | 'documents'
+const has = (file: string, shape: Shape) => (shape === 'files' ? { files: [file] } : { documents: [`${PAPER}/${file}`], files: [file] })
+const partsAs = (shape: Shape, ...picked: string[]): EpicPart[] => [
+  { id: 'intro', heading: 'Introduction', refs: [], picked: picked.includes('intro'), ...has('chapters/intro.tex', shape) },
+  { id: 'methods', heading: 'Methods', refs: [], picked: picked.includes('methods'), ...has('chapters/methods.tex', shape) },
+  { id: 'results', heading: 'Results', refs: [], picked: picked.includes('results'), ...has('chapters/results.tex', shape) },
 ]
+const parts = (...picked: string[]) => partsAs('files', ...picked)
+/** The protocol's rule over these parts, as the page holds it. */
+const focusOn = (list: readonly EpicPart[]) => renderHook(() => useFocus({ parts: list, epic: EPIC, projectPath: PROJECT })).result.current
 
 const asked: { method: string; params: unknown }[] = []
 const at = (fake: ReturnType<typeof fakeDecks>, picked: string[], over: Partial<Host> = {}) => (
   <Screen
     host={host({
       epic: EPIC,
+      projectPath: PROJECT,
       parts: parts(...picked),
       request: (method: string, params?: unknown) => {
         asked.push({ method, params })
@@ -84,47 +95,59 @@ const strip = () => within(screen.getByRole('navigation', { name: 'slides' })).q
 const counter = () => preview().getByTestId('position').textContent
 const onScreen = () => preview().queryByRole('heading')?.textContent ?? null
 const turned = () => asked.filter((one) => one.method === 'passage.set').map((one) => (one.params as { passage: { section: { title: string } | null } }).passage.section?.title)
-/** Nothing about the pick is written anywhere on the page. */
+/** Nothing about the pick is written anywhere on the page: no line, no label, no hint on a slide. */
 const silent = () => {
   expect(screen.queryByTestId('focus')).toBeNull()
   expect(document.body.textContent).not.toContain('outside the picked')
   expect(document.body.textContent).not.toContain('Parts are picked')
+  expect(document.body.textContent).not.toContain('picked part')
+  expect([...document.querySelectorAll('[title]')].map((one) => one.getAttribute('title')).filter((title) => /picked|outside/i.test(title ?? ''))).toEqual([])
 }
 
-test('a slide is anchored to its section’s file and to every file it cites', () => {
+test('a slide is anchored by its source — its section’s file and every file it cites — and a slide with neither by nothing', () => {
   const slides = parseDeck(DECK, 'defence').slides
-  expect(slides.map((slide) => anchorsOf(slide, PROJECT).map((anchor) => (anchor as { file: string }).file.replace(`${PROJECT}/${PAPER}/`, '')))).toEqual([
+  const anchors = anchorsIn(slides, PROJECT)
+  expect(slides.map((_, index) => anchors(index).map((anchor) => (anchor as { file: string }).file.replace(`${PROJECT}/${PAPER}/`, '')))).toEqual([
+    /* The title: tied to no part, and not "part of every part" either. */
     [],
     ['chapters/intro.tex'],
     ['chapters/intro.tex', 'chapters/methods.tex'],
     ['chapters/methods.tex'],
     ['main.tex'],
   ])
+  expect(anchors(9)).toEqual([])
 })
 
-describe('which slides a pick shows', () => {
+for (const shape of ['files', 'documents'] as const) {
+  describe(`which slides a pick shows — a host that sends ${shape === 'files' ? 'only `files`' : '`documents`'}`, () => {
+    const slides = parseDeck(DECK, 'defence').slides
+    const narrow = (picked: string[], held: number | null = null) => narrowDeck(focusOn(partsAs(shape, ...picked)), slides, PROJECT, held)
+
+    test('nothing ticked is the whole deck', () => {
+      expect(narrow([])).toEqual({ focused: false, shown: [0, 1, 2, 3, 4], held: null, empty: '' })
+      /* And holding a slide means nothing then. */
+      expect(narrow([], 0).held).toBeNull()
+    })
+
+    test('a part is the slides linked into its files or citing them; a slide of no part is outside every pick', () => {
+      expect(narrow(['methods']).shown).toEqual([2, 3])
+      expect(narrow(['intro']).shown).toEqual([1, 2])
+      expect(narrow(['intro', 'methods']).shown).toEqual([1, 2, 3])
+      /* The title slide and the one linked to main.tex are in no part: front matter is left out under a pick. */
+      expect(narrow(['results'])).toEqual({ focused: true, shown: [], held: null, empty: 'No slide is in the picked part.' })
+    })
+
+    test('the slide in hand is kept in its place in the order, and named', () => {
+      expect(narrow(['methods'], 0)).toMatchObject({ focused: true, shown: [0, 2, 3], held: 0 })
+      /* One that is in the pick anyway is not "held". */
+      expect(narrow(['methods'], 3)).toMatchObject({ focused: true, shown: [2, 3], held: null })
+    })
+  })
+}
+
+describe('around the shown slides', () => {
   const slides = parseDeck(DECK, 'defence').slides
-  const narrow = (picked: string[], held: number | null = null) => narrowDeck(parts(...picked), slides, PROJECT, EPIC, held)
-
-  test('nothing ticked is the whole deck', () => {
-    expect(narrow([])).toEqual({ focused: false, shown: [0, 1, 2, 3, 4], held: null })
-    /* And holding a slide means nothing then. */
-    expect(narrow([], 0).held).toBeNull()
-  })
-
-  test('a part is the slides linked into its files or citing them; a slide of no part is outside every pick', () => {
-    expect(narrow(['methods']).shown).toEqual([2, 3])
-    expect(narrow(['intro']).shown).toEqual([1, 2])
-    expect(narrow(['intro', 'methods']).shown).toEqual([1, 2, 3])
-    /* The title slide and the one linked to main.tex are in no part. */
-    expect(narrow(['results']).shown).toEqual([])
-  })
-
-  test('the slide in hand is kept in its place in the order, and named', () => {
-    expect(narrow(['methods'], 0)).toEqual({ focused: true, shown: [0, 2, 3], held: 0 })
-    /* One that is in the pick anyway is not "held". */
-    expect(narrow(['methods'], 3)).toEqual({ focused: true, shown: [2, 3], held: null })
-  })
+  const narrow = (picked: string[]) => narrowDeck(focusOn(parts(...picked)), slides, PROJECT, null)
 
   test('the nearest shown slide, and the steps between shown slides', () => {
     expect(nearestShown([2, 3], 0)).toBe(2)
@@ -147,9 +170,10 @@ describe('which slides a pick shows', () => {
     expect(positionSaid(narrow(['results']), null, 5)).toBe('0 of 0 · 5 in the deck')
   })
 
-  test('the one sentence, for a pick that leaves no slide', () => {
-    expect(emptySaid(parts('results'))).toBe('No slide of this deck is linked to or cites a file of the picked part.')
-    expect(emptySaid(parts('results', 'intro'))).toBe('No slide of this deck is linked to or cites a file of the picked parts.')
+  test('the one sentence, for a pick that leaves no slide: the protocol’s', () => {
+    expect(narrow(['results']).empty).toBe('No slide is in the picked part.')
+    expect(narrow(['results', 'intro']).empty).toBe('No slide is in the picked parts.')
+    expect(narrow([]).empty).toBe('')
   })
 })
 
@@ -210,7 +234,7 @@ describe('the deck as the ticks change', () => {
   test('a pick that leaves no slide: one sentence in the empty preview, and the Markdown still whole', async () => {
     const fake = fakeDecks({}, { text: DECK })
     render(at(fake, ['results']))
-    await waitFor(() => expect(preview().getByTestId('focus-empty').textContent).toBe('No slide of this deck is linked to or cites a file of the picked part.'))
+    await waitFor(() => expect(preview().getByTestId('focus-empty').textContent).toBe('No slide is in the picked part.'))
     expect(strip()).toEqual([])
     expect(onScreen()).toBeNull()
     expect(counter()).toBe('0 of 0 · 5 in the deck')
@@ -228,6 +252,8 @@ describe('the deck as the ticks change', () => {
     const held = within(screen.getByRole('navigation', { name: 'slides' })).getByRole('button', { name: 'slide 2' })
     expect(held.hasAttribute('data-held')).toBe(true)
     expect(held.className).toContain('opacity-50')
+    /* Set back, and that is all: no words about the pick on it. */
+    expect(held.hasAttribute('title')).toBe(false)
     expect(counter()).toBe('1 of 3 · slide 2 of 5')
     silent()
 
@@ -310,12 +336,68 @@ describe('the deck as the ticks change', () => {
     const view = render(at(fake, ['methods']))
     await waitFor(() => expect(onScreen()).toBe('How'))
     view.rerender(at(fake, ['methods'], { passage: reading }))
-    await waitFor(() => expect(screen.getByTestId('following').getAttribute('aria-label')).toBe('Slide 2, for Introduction, is outside the picked parts'))
+    await waitFor(() => expect(screen.getByTestId('following').getAttribute('aria-label')).toBe('Slide 2, for Introduction, is not among the slides shown'))
     expect(onScreen()).toBe('How')
     expect(strip()).toEqual(['slide 3', 'slide 4'])
     /* With nothing picked the same reading is followed, as it always was. */
     view.rerender(at(fake, [], { passage: { ...reading, section: { title: 'Design', from: 0, to: 9 }, path: `${PROJECT}/${PAPER}/chapters/methods.tex` } }))
     await waitFor(() => expect(onScreen()).toBe('Design'))
+  })
+})
+
+/**
+ * The keyboard. A move the canvas made — a part picked, the paper turned, a slide pointed at — must not take focus
+ * into this frame: the person is somewhere else, and in the host's parts picker the moment this frame takes focus the
+ * picker closes under them. Only a press of their own, inside this page, puts the keyboard in the Markdown.
+ */
+describe('the keyboard is taken only by the person’s own move', () => {
+  const last = () => jumped.at(-1)
+
+  test('a pick that moves the deck to another slide moves the caret and does not ask for focus', async () => {
+    const fake = fakeDecks({}, { text: DECK })
+    const view = render(at(fake, []))
+    await waitFor(() => expect(strip()).toHaveLength(5))
+    caretAt(DECK.indexOf('## Why'))
+    await waitFor(() => expect(onScreen()).toBe('Why'))
+    const before = jumped.length
+    /* Methods: "Why" is not in it, so the pick itself moves the deck. */
+    view.rerender(at(fake, ['methods']))
+    await waitFor(() => expect(onScreen()).toBe('How'))
+    expect(jumped.length).toBeGreaterThan(before)
+    expect(jumped.slice(before).map((one) => one.focus)).toEqual(jumped.slice(before).map(() => false))
+    expect(last()?.focus).toBe(false)
+    /* And unpicking, picking another, picking two: none of them asks either. */
+    for (const picked of [['intro'], ['intro', 'methods'], [], ['results']]) {
+      view.rerender(at(fake, picked))
+      await pause(20)
+    }
+    expect(jumped.slice(before).filter((one) => one.focus)).toEqual([])
+  })
+
+  test('the paper turning, and a slide pointed at from outside, move the deck without asking for focus', async () => {
+    const fake = fakeDecks({}, { text: DECK })
+    const view = render(at(fake, []))
+    await waitFor(() => expect(strip()).toHaveLength(5))
+    const before = jumped.length
+    const reading = { path: `${PROJECT}/${PAPER}/chapters/methods.tex`, page: 2, from: null, to: null, quoted: '', section: { title: 'Design', from: 0, to: 9 } }
+    view.rerender(at(fake, [], { passage: reading }))
+    await waitFor(() => expect(onScreen()).toBe('Design'))
+    fake.point(1, 10)
+    await waitFor(() => expect(onScreen()).toBe('Why'))
+    expect(jumped.length).toBeGreaterThan(before + 1)
+    expect(jumped.slice(before).filter((one) => one.focus)).toEqual([])
+  })
+
+  test('a thumbnail pressed, and a step taken, are the person’s own: the keyboard goes to the Markdown', async () => {
+    const fake = fakeDecks({}, { text: DECK })
+    render(at(fake, ['methods']))
+    await waitFor(() => expect(strip()).toEqual(['slide 3', 'slide 4']))
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'slides' })).getByRole('button', { name: 'slide 4' }))
+    await waitFor(() => expect(onScreen()).toBe('Design'))
+    expect(last()?.focus).toBe(true)
+    fireEvent.click(preview().getByRole('button', { name: 'previous slide' }))
+    await waitFor(() => expect(onScreen()).toBe('How'))
+    expect(last()?.focus).toBe(true)
   })
 })
 

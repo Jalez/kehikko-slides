@@ -17,8 +17,7 @@ import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
 import { absolute, linkedToReading, passageFor, passageKey, projectRelative, readingOf, samePath, slidePointed, type PassageLike, type Reading } from './follow.ts'
-import { anchorsOf as anchorsOfSlide } from './follow.ts'
-import { emptySaid, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
+import { anchorsIn, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
 import { useTalk } from './talk.ts'
@@ -71,7 +70,7 @@ export function Workspace({
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
   const text = doc.text ?? ''
   const [caret, setCaret] = useState(0)
-  const [jump, setJump] = useState<{ at: number; nonce: number } | null>(null)
+  const [jump, setJump] = useState<{ at: number; nonce: number; focus: boolean } | null>(null)
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')
 
   /*
@@ -95,29 +94,40 @@ export function Workspace({
 
   /*
    * The parts of the epic ticked in the host's bar: the deck narrows to their
-   * slides, as the paper narrows to their pages. `focus.ts` has the rule and
-   * what is deliberately left whole (the Markdown, print, the presenter's
-   * window). `held` is a slide outside the pick that the person is in — the
+   * slides, as the paper narrows to their pages. The rule is the protocol's
+   * (`focus.narrow`); `focus.ts` has what is deliberately left whole (the
+   * Markdown, print, the presenter's window) and `follow.ts` each slide's
+   * anchor. `held` is a slide outside the pick that the person is in — the
    * caret was put in it in the Markdown, or it has typing that is not saved —
    * and stays drawn until they leave it.
    */
   const focus = useFocus(host)
   const [held, setHeld] = useState<number | null>(null)
   const narrowing = useMemo(
-    () => narrowDeck(focus.parts, deck.slides, project, host.epic ?? null, held === current ? held : null),
-    [focus.parts, deck.slides, project, host.epic, held, current],
+    () => narrowDeck(focus, deck.slides, project, held === current ? held : null),
+    [focus, deck.slides, project, held, current],
   )
+  const anchorsNow = useMemo(() => anchorsIn(deck.slides, project), [deck.slides, project])
   const { shown: listed } = narrowing
   /* The slide in front, as an index into the deck: null when the pick leaves this one out and nothing holds it. */
   const front = !narrowing.focused || listed.includes(current) ? current : null
   const slide = front === null ? undefined : (deck.slides[front] ?? deck.slides[0])
 
-  const goTo = (index: number) => {
+  /*
+   * Go to a slide: the caret is put at its start and the Markdown scrolled to it.
+   *
+   * `byHand` is the person's own press or key INSIDE this page — a thumbnail, a step, a key while presenting — and
+   * only then is the keyboard taken into the Markdown, where they will type next. Every other move comes from
+   * outside: the paper turned, a part was picked in the host's bar, an agent or another module pointed, the
+   * presenter's window stepped. The person's keyboard is wherever they are working then — in the host's picker,
+   * which closes the moment this frame takes focus — and this page moves without taking it.
+   */
+  const goTo = (index: number, byHand = false) => {
     const range = slideRanges(text)[index]
     if (!range) return
     const at = firstInk(text, range.from, range.to)
     setCaret(at)
-    setJump((was) => ({ at, nonce: (was?.nonce ?? 0) + 1 }))
+    setJump((was) => ({ at, nonce: (was?.nonce ?? 0) + 1, focus: byHand }))
   }
 
   /* Presenting follows the narrowing: a person rehearsing one chapter presents that chapter. The keys step
@@ -129,7 +139,7 @@ export function Workspace({
     count: listed.length,
     goTo: (place) => {
       const to = listed[place]
-      if (to !== undefined) goTo(to)
+      if (to !== undefined) goTo(to, true)
     },
   })
   const [following, setFollowing] = useState(true)
@@ -186,7 +196,6 @@ export function Workspace({
     const to = Math.min(slideAt(text, at), deck.slides.length - 1)
     if (to !== current) setHeld(narrowing.focused && !focus.inFocus(anchorsNow(to)) ? to : null)
   }
-  const anchorsNow = (index: number) => (deck.slides[index] ? anchorsOfSlide(deck.slides[index]!, project) : [])
   /* And typing in a slide holds it: an edit can take a slide out of the pick (its link, its citation) under the hands
      making it. */
   const onEdit = (next: string) => {
@@ -384,7 +393,7 @@ export function Workspace({
           className="bg-muted/30 hidden w-40 shrink-0 flex-col gap-2 overflow-y-auto border-r p-2 @min-[720px]:flex"
         >
           {/* The shown slides, each under its own number in the deck. The one held though it is outside the pick is
-              set back, which is all that says so. */}
+              set back; no word is drawn about the pick. */}
           {listed.map((index) => ({ one: deck.slides[index]!, index })).map(({ one, index }) => (
             <button
               key={index}
@@ -392,8 +401,7 @@ export function Workspace({
               aria-label={`slide ${index + 1}`}
               aria-current={index === current ? 'true' : undefined}
               data-held={index === narrowing.held ? '' : undefined}
-              title={index === narrowing.held ? 'Outside the picked parts' : undefined}
-              onClick={() => goTo(index)}
+              onClick={() => goTo(index, true)}
               className={cn('group flex items-start gap-1.5 text-left outline-none transition-opacity', index === narrowing.held && 'opacity-50')}
             >
               <span className="text-muted-foreground w-4 shrink-0 pt-0.5 text-right text-[10px] tabular-nums">
@@ -439,7 +447,7 @@ export function Workspace({
             ) : narrowing.focused && ready ? (
               /* The pick leaves no slide of this deck: said here, in the pane it emptied, and nowhere else. */
               <p role="status" data-testid="focus-empty" className="text-muted-foreground m-auto max-w-sm p-4 text-center text-xs">
-                {emptySaid(focus.parts)}
+                {narrowing.empty}
               </p>
             ) : null}
           </div>
@@ -459,7 +467,7 @@ export function Workspace({
               className="size-6"
               aria-label="previous slide"
               disabled={before === null}
-              onClick={() => before !== null && goTo(before)}
+              onClick={() => before !== null && goTo(before, true)}
             >
               <ChevronLeft className="size-3.5" />
             </Button>
@@ -470,7 +478,7 @@ export function Workspace({
               className="size-6"
               aria-label="next slide"
               disabled={after === null}
-              onClick={() => after !== null && goTo(after)}
+              onClick={() => after !== null && goTo(after, true)}
             >
               <ChevronRight className="size-3.5" />
             </Button>

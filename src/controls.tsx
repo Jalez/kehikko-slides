@@ -34,8 +34,9 @@ export function followingLabel(
   if (!on) return 'Not following'
   if (presenting) return 'Paused while presenting'
   if (missing) return `No slides for ${missing}`
-  /* The paper is on a section whose slide is not drawn under the picked parts: said here, not jumped to. */
-  if (aside) return `Slide ${aside.slide + 1}, for ${aside.title}, is outside the picked parts`
+  /* The paper is on a section whose slide is not among the slides drawn: said here, not jumped to. What is picked is
+     the host's to say, and is not named. */
+  if (aside) return `Slide ${aside.slide + 1}, for ${aside.title}, is not among the slides shown`
   return 'Following the paper'
 }
 

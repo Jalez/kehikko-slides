@@ -89,6 +89,40 @@ describe('SlideView', () => {
     expect(missing(bare)?.textContent).toBe('figures/unnamed.png')
   })
 
+  test('a picture the door refused because the server started again under this page: the page learns it is older than its server', async () => {
+    const { resetServerStanding, serverStanding } = await import('kehikot-module-protocol/client')
+    const realFetch = globalThis.fetch
+    const asked: { url: string; ticket: string | null }[] = []
+    globalThis.fetch = (async (url: string, init: RequestInit = {}) => {
+      asked.push({ url: String(url), ticket: (init.headers as Record<string, string> | undefined)?.['x-module-ticket'] ?? null })
+      return Response.json({ ok: false, error: 'That picture was not asked for by this app’s own page.', refused: 'ticket' }, { status: 403 })
+    }) as unknown as typeof fetch
+    resetServerStanding()
+    try {
+      /* A picture named as written, with no project, is not this app's door: nothing is asked. */
+      const plain = render(<SlideView slide={parseSlide('![elsewhere](figures/elsewhere.png)')} />)
+      fireEvent.error(plain.container.querySelector('img')!)
+      expect(asked).toEqual([])
+
+      const slide = parseSlide('![a figure](figures/stale.png)\n\n![another](figures/stale-too.png)')
+      const view = render(
+        <PictureProject.Provider value="/work/thesis">
+          <SlideView slide={slide} />
+        </PictureProject.Provider>,
+      )
+      for (const img of view.container.querySelectorAll('img')) fireEvent.error(img)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      /* Asked once for both pictures, of the same door, with the ticket where `ask` can be told it was refused. */
+      expect(asked).toHaveLength(1)
+      expect(asked[0]!.url).toContain('/api/asset')
+      expect(asked[0]!.ticket).not.toBeNull()
+      expect(serverStanding()).toBe('stale')
+    } finally {
+      globalThis.fetch = realFetch
+      resetServerStanding()
+    }
+  })
+
   test('a quote slide draws a blockquote', () => {
     const view = draw('<!-- layout: quote -->\n> Simplicity is prerequisite for reliability.\n\n— Dijkstra')
     expect(view.querySelector('.slide-quote blockquote')?.textContent).toContain('Simplicity')

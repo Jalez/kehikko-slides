@@ -1,21 +1,26 @@
-import { narrowToFocus, pickedParts, type EpicPart } from 'kehikot-module-protocol'
+import { emptySaid, type Anchor } from 'kehikot-module-protocol'
+import type { Focus } from 'kehikot-module-protocol/client/react'
 
 import type { Slide } from '../deck/format.ts'
-import { anchorsOf } from './follow.ts'
+import { anchorOf } from './follow.ts'
 
 /**
  * A deck under the parts picked in the host's bar: which slides are shown.
  *
+ * ## One rule, and it is not this file's
+ *
+ * A part belongs to the epic and names no module; what it has is a list of
+ * documents, which the host unions from what every module published for it
+ * (a host from before that sends the paper-relative `files`). Whether a slide
+ * is in a picked part is asked of the protocol and never answered here: every
+ * slide says what ties it to a part with `anchorOf` (`follow.ts`), and
+ * `useFocus(host).narrow` decides.
+ *
  * ## It narrows, as the paper does
  *
- * With a part picked this used to set the other slides back in the thumbnail
- * strip and say how many in a line above the deck. At the size a deck has on a
- * canvas the strip is not drawn at all, so the whole of it was one grey
- * sentence over a deck that looked exactly as before — beside a paper that
- * had narrowed to the part's pages. Now it does what the paper does: the
- * strip, the slide on screen, stepping, the counter and presenting hold only
- * the slides of the picked parts. Nothing picked is the whole deck, exactly
- * as it was.
+ * The strip, the slide on screen, stepping, the counter and presenting hold
+ * only the slides of the picked parts. Nothing picked is the whole deck,
+ * exactly as it was.
  *
  * ## What is not narrowed
  *
@@ -28,22 +33,24 @@ import { anchorsOf } from './follow.ts'
  *
  * ## Which slides are in a part
  *
- * The protocol's rule over `anchorsOf` (`follow.ts`): a slide is in a picked
- * part when the file of the section it is linked to, or of any passage it
- * cites, is one that part owns. A slide with neither — a title slide, a
- * closing one — belongs to the deck as a whole and to no part, so it is
- * outside every pick, like a step filed under none.
+ * A slide is in a picked part when the file of the section it is linked to,
+ * or of any passage it cites, is one that part has. A slide tied to no part —
+ * a title slide, a closing one, one linked only to a file no part has — is
+ * outside every pick, like a step filed under none and like the paper's own
+ * front matter.
  *
  * ## The slide in hand
  *
  * A slide outside the pick that the person is IN — the caret was put in it in
- * the Markdown, or it has unsaved typing — is kept (`held`): drawn, in its
- * place in the order, set back in the strip. It leaves when they leave it.
+ * the Markdown, or it has unsaved typing — is kept (`held`, the rule's
+ * `keep`): drawn, in its place in the order, set back in the strip. It leaves
+ * when they leave it.
  *
  * ## And nothing is said
  *
- * No line, no count of what is outside: the host's bar says what is picked
- * and the narrowed deck is the message. The one exception is `EMPTY`, drawn
+ * No line, no count of what is outside, no label on a slide: the host's bar
+ * says what is picked and the narrowed deck is the message. The one exception
+ * is `empty` — the protocol's `No slide is in the picked part.` — drawn
  * inside the preview when the pick leaves no slide at all, because an empty
  * pane with no words in it looks broken.
  */
@@ -54,19 +61,35 @@ export interface Narrowing {
   shown: number[]
   /** The slide shown although it is outside the pick, because the person is in it. Null when there is none. */
   held: number | null
+  /** The protocol's sentence for a preview the pick left with no slide. `''` when nothing is picked. */
+  empty: string
+}
+
+/** What one item is called in the protocol's sentence for an empty preview. */
+export const NOUN = 'slide'
+
+/** Each slide's anchors, by its index into the deck. An index the deck does not have answers none. */
+export function anchorsIn(slides: readonly Slide[], project: string): (index: number) => Anchor[] {
+  return (index) => {
+    const slide = slides[index]
+    return slide ? anchorOf(slide, project) : []
+  }
 }
 
 export function narrowDeck(
-  parts: readonly EpicPart[],
+  focus: Focus,
   slides: readonly Slide[],
   project: string,
-  epic: string | null,
   held: number | null,
 ): Narrowing {
   const all = slides.map((_, index) => index)
-  const narrowed = narrowToFocus(parts, all, (index) => anchorsOf(slides[index]!, project), { epic, keep: (index) => index === held })
-  const focused = pickedParts(parts).length > 0
-  return { focused, shown: narrowed.shown, held: focused && narrowed.kept > 0 ? held : null }
+  const narrowed = focus.narrow(all, anchorsIn(slides, project), { noun: NOUN, keep: (index) => index === held })
+  return {
+    focused: focus.focused,
+    shown: narrowed.shown,
+    held: focus.focused && narrowed.kept > 0 ? held : null,
+    empty: emptySaid(focus.parts, NOUN),
+  }
 }
 
 /** The shown slide nearest a slide of the deck: the next one on, or failing that the last one before. Null when none is shown. */
@@ -96,9 +119,4 @@ export function positionSaid(narrowing: Narrowing, front: number | null, total: 
   if (!narrowing.focused) return `${(front ?? 0) + 1} / ${total}`
   if (front === null) return `0 of ${narrowing.shown.length} · ${total} in the deck`
   return `${narrowing.shown.indexOf(front) + 1} of ${narrowing.shown.length} · slide ${front + 1} of ${total}`
-}
-
-/** The one sentence, drawn inside the preview when the pick leaves no slide to draw. */
-export function emptySaid(parts: readonly EpicPart[]): string {
-  return `No slide of this deck is linked to or cites a file of the picked part${pickedParts(parts).length === 1 ? '' : 's'}.`
 }

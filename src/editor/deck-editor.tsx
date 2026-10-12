@@ -14,8 +14,14 @@ export interface EditorProps {
   onChange(text: string): void
   /** The caret moved (or the text under it changed); its offset in `value`. */
   onCaret(at: number): void
-  /** Put the caret at `at` and scroll to it, once per new `nonce`. */
-  jump: { at: number; nonce: number } | null
+  /**
+   * Put the caret at `at` and scroll to it, once per new `nonce`. `focus` is
+   * whether to take the keyboard as well: true only for a move the person made
+   * themselves inside this page. A move that came from the canvas — a part
+   * picked, the paper turned, a slide pointed at — never takes it: focus
+   * entering this frame closes whatever the person has open in the host.
+   */
+  jump: { at: number; nonce: number; focus?: boolean } | null
   theme: 'light' | 'dark'
 }
 
@@ -43,7 +49,7 @@ export function DeckEditor({ value, onChange, onCaret, jump, theme }: EditorProp
     if (!jump || !view) return
     const at = Math.min(jump.at, view.state.doc.length)
     view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'start', yMargin: 24 }) })
-    view.focus()
+    if (jump.focus) view.focus()
   }, [jump])
 
   return (
