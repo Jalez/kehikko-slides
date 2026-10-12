@@ -9,6 +9,8 @@ import type {
   HistoryEntry,
   HistoryReply,
   ListDecksReply,
+  PointerSaid,
+  PointerState,
   PresentState,
   ReadDeckReply,
   SourceReply,
@@ -43,6 +45,13 @@ export interface Decks {
   present(project: string, slug: string, index: number, blank: boolean): Promise<void>
   /** Calls `onState` with where a talk is, at once and on every move. Returns the unsubscribe. */
   followTalk(project: string, slug: string, onState: (state: PresentState) => void): () => void
+  /**
+   * Calls `onPoint` with the slide the deck was last pointed at from outside, at once and on every pointing.
+   * `presenting` tells the door this page is giving a talk: it is counted and not turned. Returns the unsubscribe.
+   */
+  followPointer(project: string, slug: string, onPoint: (state: PointerState) => void, presenting: boolean): () => void
+  /** Tell the door what this page did with the pointing made at `at`, so its caller is told what happened. */
+  pointed(project: string, slug: string, at: number, did: PointerSaid['did'], hidden: boolean): Promise<void>
   /** Every slide's sources, looked for in their files; indexed like the slides. */
   citations(project: string, slug: string): Promise<CitationView[][]>
   /** The exact words of a project file between two byte offsets. */
@@ -103,6 +112,14 @@ export const decks: Decks = {
     return follow<PresentState>('./api/present', (state) => state && typeof state.index === 'number' && onState(state), {
       query: { project, slug },
     })
+  },
+  followPointer(project, slug, onPoint, presenting) {
+    return follow<PointerState>('./api/pointer', (state) => state && typeof state.index === 'number' && onPoint(state), {
+      query: presenting ? { project, slug, presenting: '1' } : { project, slug },
+    })
+  },
+  async pointed(project, slug, at, did, hidden) {
+    await send('POST', './api/pointer', { project, slug, at, did, hidden } satisfies PointerSaid)
   },
   async citations(project, slug) {
     return (await get<CitationsReply>('./api/citations', { project, slug })).slides

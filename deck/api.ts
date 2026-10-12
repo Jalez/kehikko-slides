@@ -31,6 +31,12 @@ export const PATHS = {
   watch: '/api/watch',
   /** GET ?project&slug — server-sent events of {@link PresentState}. POST {@link PresentMove}. */
   present: '/api/present',
+  /**
+   * GET ?project&slug — server-sent events of {@link PointerState}. Pointed over MCP (`show_slide`), never by a page.
+   * `&presenting=1`: the page is giving a talk, and is counted but sent no pointing.
+   * POST {@link PointerSaid}: a page saying what it did with one pointing, so the door can tell its caller.
+   */
+  pointer: '/api/pointer',
   /** GET ?project&slug — every slide's sources, looked for in their files: {@link CitationsReply}. */
   citations: '/api/citations',
   /** GET ?project&path&from&to — the exact words of a project file between two byte offsets: {@link SourceReply}. */
@@ -166,6 +172,29 @@ export interface PresentMove {
   slug: string
   index: number
   blank?: boolean
+}
+
+/**
+ * The slide a deck was last pointed at from outside its page. `at` is ms since the epoch of that
+ * pointing, 0 when nothing has pointed yet; a page goes to each pointing once, told apart by `at`.
+ */
+export interface PointerState {
+  slug: string
+  index: number
+  at: number
+}
+
+/**
+ * What a page did with the pointing made at `at`. `shown`: the slide is on its screen. `outside`: on its screen
+ * though the parts picked there leave it out, drawn as the slide in hand. `stale`: not turned, the text it holds has
+ * no such slide. `presenting`: not turned, it is giving a talk. `hidden`: its window was hidden when it answered.
+ */
+export interface PointerSaid {
+  project: string
+  slug: string
+  at: number
+  did: 'shown' | 'outside' | 'stale' | 'presenting'
+  hidden: boolean
 }
 
 /** One source of one slide, as the store found it: the protocol's view of a citation. */

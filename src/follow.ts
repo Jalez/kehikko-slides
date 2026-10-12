@@ -1,6 +1,6 @@
-import type { Anchor } from 'kehikot-module-protocol'
+import { KEHIKOT_DIR, type Anchor } from 'kehikot-module-protocol'
 
-import type { SectionLink, Slide } from '../deck/format.ts'
+import { slideAt, slideRanges, type SectionLink, type Slide } from '../deck/format.ts'
 
 /**
  * Following the paper, both ways, as plain logic: no React, no host, no
@@ -31,6 +31,7 @@ export interface SectionPassage {
 /** The fields of the host's passage this reads; the protocol's `Passage` fits it. */
 export interface PassageLike {
   path: string
+  page?: number | null
   /** A selected range, in bytes, when there is one. */
   from?: number | null
   to?: number | null
@@ -91,6 +92,40 @@ export function passageFor(project: string, section: SectionLink): SectionPassag
     quoted: '',
     section: { title: section.title, from: null, to: null },
   }
+}
+
+/** One passage as a comparable string: the same one sent again is not a new pointing. */
+export function passageKey(passage: PassageLike | null | undefined): string {
+  return passage ? `${trimEnd(passage.path)}\0${passage.page ?? ''}\0${passage.from ?? ''}\0${passage.to ?? ''}\0${passage.section?.title ?? ''}` : ''
+}
+
+/** A deck's own file, as a passage from another module names it. */
+export function deckPath(project: string, slug: string): string {
+  return absolute(project, `${KEHIKOT_DIR}/slides/${slug}.md`)
+}
+
+/**
+ * The slide a passage points this deck at, or null: the passage is not of
+ * this deck's file, or names no slide of it. A module points at a slide the
+ * way it points at the paper — the file and a byte range in it, here the
+ * slide's own Markdown — or, with no range, by `page`: the slide's number
+ * counting from 1, as the strip and the PDF number them. A place the deck
+ * does not have is not followed, rather than taken as the nearest slide.
+ *
+ * A passage is state, not an event: the same one set again after the person
+ * has turned away is not a new pointing (`passageKey`). A sender that means to
+ * point again changes the passage, or uses `show_slide`.
+ */
+export function slidePointed(passage: PassageLike | null | undefined, project: string, slug: string, text: string): number | null {
+  if (!passage || !samePath(passage.path, deckPath(project, slug))) return null
+  if (typeof passage.from === 'number') {
+    /* Bytes on the wire, characters in the editor. */
+    const bytes = new TextEncoder().encode(text)
+    if (!Number.isInteger(passage.from) || passage.from < 0 || passage.from > bytes.length) return null
+    return slideAt(text, new TextDecoder().decode(bytes.slice(0, passage.from)).length)
+  }
+  if (typeof passage.page !== 'number' || !Number.isInteger(passage.page)) return null
+  return passage.page >= 1 && passage.page <= slideRanges(text).length ? passage.page - 1 : null
 }
 
 const keyOf = (reading: Reading) => `${trimEnd(reading.path)}\0${reading.title}`

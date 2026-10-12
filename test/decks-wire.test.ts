@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import { AskFailed, resetServerStanding, serverStanding } from 'kehikot-module-protocol/client'
 
-import { TICKET, answer } from '../doors.ts'
+import { TICKET } from '../doors.ts'
+import { answer } from './now.ts'
 import { decks } from '../src/wire/decks.ts'
 
 /* The page's wire against the real doors, with `fetch` as the only thing faked. */

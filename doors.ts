@@ -4,7 +4,7 @@ import { KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-
 
 import { establishBuild, mintTicket, refuseTicket, type Reply } from 'kehikot-module-protocol/serve'
 
-import { PATHS, type DeckChange, type PresentState } from './deck/api.ts'
+import { PATHS, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
 import { addCitation } from './deck/cite.ts'
 import {
   deckProblems,
@@ -14,8 +14,9 @@ import {
   serialiseSlide,
   slideHeadline,
   slideRanges,
+  type Slide,
 } from './deck/format.ts'
-import { followTalk, moveTalk, poke, watchDecks } from './live.ts'
+import { POINTER, POINTER_DID, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
 import {
   badSlug,
@@ -40,7 +41,7 @@ import {
 /**
  * Every door but the page, as pure functions: `answer` takes a request and
  * returns a status and a body, or `null` for "not ours, let Vite have it";
- * `stream` opens the two server-sent-event doors. `doors()` in `vite.config.ts` is the only
+ * `stream` opens the server-sent-event doors. `doors()` in `vite.config.ts` is the only
  * thing that touches a socket, which is what lets the tests call these directly.
  */
 
@@ -212,6 +213,54 @@ function tools() {
         required: ['project', 'deck', 'index', 'path', 'quote'],
       },
     },
+    {
+      name: 'show_slide',
+      description:
+        'Turn the Slides page to one slide of a deck, so the person is looking at the slide you are talking about. '
+        + 'A pointer, not an edit: nothing is written and nothing goes into the history, the person can turn away '
+        + 'by going to another slide themselves, and the next show_slide is followed again. There is nothing to let '
+        + 'go of afterwards: the page is not held on the slide. '
+        + 'The answer says what happened, as the open pages themselves reported it, in words and in '
+        + '`structuredContent`: `outcome` is `shown` only when the slide is on screen in at least one page whose '
+        + 'window is not hidden; `unseen` when no Slides page is open on the deck, or none is known to be showing '
+        + 'it; `declined` when the open pages would not turn (a talk is being given, or a page holds unsaved text '
+        + 'without that slide). A slide outside the parts picked on a page is still brought up there, as the slide '
+        + 'in hand, and the answer says so. `index` counts from 0, as read_deck numbers the slides. A slide that is '
+        + 'not there is refused with the deck\'s own slide list. '
+        + 'Another module, with no MCP call, points by setting the canvas passage on the deck\'s file '
+        + `(<project>/${KEHIKOT_DIR}/slides/<deck>.md): a byte range of its Markdown, or \`page\`, the slide's number `
+        + 'counting from 1. A passage is state, not an event: the same passage set again after the person has turned '
+        + 'away is not followed again, so to point again change the passage or use show_slide.',
+      inputSchema: { type: 'object', properties: { ...PROJECT, ...DECK, ...INDEX }, required: ['project', 'deck', 'index'] },
+      outputSchema: {
+        type: 'object',
+        properties: {
+          deck: { type: 'string' },
+          index: { type: 'integer', description: 'The slide, counting from 0.' },
+          slide: { type: 'string', description: 'Its headline, as read_deck prints it.' },
+          slides: { type: 'integer', description: 'How many slides the deck has.' },
+          outcome: {
+            type: 'string',
+            enum: [...SHOW_OUTCOMES],
+            description:
+              'shown: on screen in at least one page whose window is not hidden. unseen: no page is open, or none is '
+              + 'known to be showing it. declined: the open pages would not turn.',
+          },
+          pages: { type: 'integer', description: 'Pages that said the slide is on their screen, in a window that is not hidden.' },
+          open: { type: 'integer', description: 'Slides pages open on this deck, presenting or not.' },
+          outside: { type: 'integer', description: 'Of `pages`, those where it is outside the picked parts and drawn as the slide in hand.' },
+          hidden: { type: 'integer', description: 'Pages that turned to it in a window that is hidden.' },
+          stale: { type: 'integer', description: 'Pages not turned: they hold unsaved text without that slide.' },
+          presenting: { type: 'integer', description: 'Pages not turned: they are giving a talk.' },
+          silent: { type: 'integer', description: 'Pages sent the pointer that did not say what they did in time.' },
+          why: { type: 'string', description: 'Why it is not `shown`, in a sentence. Empty when it is.' },
+        },
+        required: ['deck', 'index', 'slide', 'slides', 'outcome', 'pages', 'open', 'outside', 'hidden', 'stale', 'presenting', 'silent', 'why'],
+      },
+      /* It turns a page and writes nothing, so a caller that asks a person before running an unmarked tool need not
+         ask for this one. Not idempotent: the same call again turns a page the person has since turned away. */
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    },
   ]
 }
 
@@ -253,6 +302,20 @@ function indexOf(args: Record<string, unknown>, count: number, slug: string): nu
     )
   }
   return index
+}
+
+/** The slide show_slide names. Refused with the deck's own slides: the caller is choosing one, not writing one. */
+function shownOf(args: Record<string, unknown>, slides: Slide[], slug: string): number {
+  const index = typeof args.index === 'string' && args.index.trim() !== '' ? Number(args.index) : args.index
+  if (typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < slides.length) return index
+  throw new Error(
+    [
+      `"${String(args.index)}" is not a slide of "${slug}": it has ${slides.length} slide${slides.length === 1 ? '' : 's'}, numbered 0 to ${slides.length - 1}, `
+        + 'as read_deck numbers them:',
+      ...slides.map((slide, i) => `${i}. ${slideHeadline(slide) || '(empty)'}`),
+      'Nothing was shown.',
+    ].join('\n'),
+  )
 }
 
 function by(args: Record<string, unknown>, summary: string) {
@@ -430,13 +493,81 @@ function call(name: string, args: Record<string, unknown>): string {
   throw new Error(`There is no tool "${name.slice(0, 60)}" here.`)
 }
 
+/** What became of a show_slide. The words kehikko-protocol#28 is settling on for any module's "show this". */
+const SHOW_OUTCOMES = ['shown', 'unseen', 'declined'] as const
+
+/**
+ * show_slide: point every open page at the slide, wait for each to say what it
+ * did, and answer with that. The door cannot see a screen, so it claims a slide
+ * is shown only when a page said it is drawing it in a window that is not
+ * hidden; a page that said nothing is counted as silent, never as showing.
+ */
+async function showSlide(args: Record<string, unknown>): Promise<{ text: string; structuredContent: Record<string, unknown> }> {
+  const name = 'show_slide'
+  const project = projectOf(args, name)
+  const slug = deckOf(args)
+  const root = must(projectRoot(project), name)
+  const slides = parseDeck(must(readDeck(project, slug), name).text, slug).slides
+  const index = shownOf(args, slides, slug)
+  const headline = slideHeadline(slides[index]!)
+  const pointing = pointAt(root, slug, index)
+  const heard = await pointing.heard
+
+  const on = heard.filter((one) => one.did === 'shown' || one.did === 'outside')
+  const seen = on.filter((one) => !one.hidden)
+  const count = {
+    pages: seen.length,
+    open: pointing.watching + pointing.presenting,
+    outside: seen.filter((one) => one.did === 'outside').length,
+    hidden: on.length - seen.length,
+    stale: heard.filter((one) => one.did === 'stale').length,
+    presenting: pointing.presenting + heard.filter((one) => one.did === 'presenting').length,
+    silent: pointing.watching - heard.length,
+  }
+  const outcome: (typeof SHOW_OUTCOMES)[number] = count.pages ? 'shown' : !count.open || count.hidden || count.silent ? 'unseen' : 'declined'
+
+  const which = `slide ${index} of "${slug}" (${headline || 'empty'}; ${slides.length} in the deck)`
+  const pages = (n: number) => (n === 1 ? 'one open Slides page' : `${n} open Slides pages`)
+  const one = (n: number, single: string, several: string) => (n === 1 ? single : `${n} ${several}`)
+  /* Each thing that kept a page from showing it, as a sentence. In the order a caller can do something about. */
+  const kept = [
+    count.hidden ? `${one(count.hidden, 'One page turned to it in a window that is hidden', 'pages turned to it in windows that are hidden')}, where nobody is looking.` : '',
+    count.silent
+      ? `${one(count.silent, 'One page was sent the pointer and did not say', 'pages were sent the pointer and did not say')} within ${POINTER.waitMs} ms what `
+        + `${count.silent === 1 ? 'it' : 'they'} did, so whether ${count.silent === 1 ? 'it' : 'they'} turned is not known.`
+      : '',
+    count.stale ? `${one(count.stale, 'One page was not turned: it holds', 'pages were not turned: they hold')} text that is not saved and has no slide ${index} in it.` : '',
+    count.presenting ? `${one(count.presenting, 'One page is presenting and was', 'pages are presenting and were')} not turned: a talk is not turned from outside.` : '',
+  ].filter(Boolean)
+
+  let text: string
+  if (!count.open) {
+    text = `No Slides page is open on "${slug}", so nobody was shown ${which}. Nothing was turned and nothing was written. `
+      + 'Once the deck is open on the canvas, call show_slide again.'
+  } else if (outcome === 'shown') {
+    const where = count.outside
+      ? count.pages === 1
+        ? ' It is outside the parts picked on that page, so it is drawn there as the slide in hand, until the person turns to another slide.'
+        : ` On ${count.outside} of them it is outside the picked parts, and is drawn there as the slide in hand, until the person turns to another slide.`
+      : ''
+    text = `${which[0]!.toUpperCase()}${which.slice(1)} is on screen in ${pages(count.pages)} on this deck.${where}`
+      + `${kept.length ? ` ${kept.join(' ')}` : ''} Nothing was written; the person can turn away, and the next show_slide is followed again.`
+  } else {
+    text = `Nobody is known to be looking at ${which}: ${pages(count.open)} on this deck, and none is showing it where it can be seen. `
+      + `${kept.join(' ')} Nothing was written.`
+      + (count.presenting && count.presenting === count.open ? ' Call show_slide again once the talk is over.' : '')
+  }
+  const why = outcome === 'shown' ? '' : count.open ? kept.join(' ') : `No Slides page is open on "${slug}".`
+  return { text, structuredContent: { deck: slug, index, slide: headline, slides: slides.length, outcome, ...count, why } }
+}
+
 interface Rpc {
   id?: number | string
   method?: string
   params?: { name?: string; arguments?: Record<string, unknown> }
 }
 
-function mcp(rpc: Rpc): Reply {
+function mcp(rpc: Rpc): Reply | Promise<Reply> {
   const reply = (result: unknown) => ({ status: 200, body: { jsonrpc: '2.0', id: rpc.id ?? null, result } })
   const text = (s: string, isError = false) => reply({ content: [{ type: 'text', text: s }], ...(isError ? { isError } : {}) })
 
@@ -451,6 +582,13 @@ function mcp(rpc: Rpc): Reply {
   /* A notification carries no id and is answered with nothing. */
   if (typeof rpc.method === 'string' && rpc.method.startsWith('notifications/')) return { status: 202, body: null }
   if (rpc.method === 'tools/list') return reply({ tools: tools() })
+  if (rpc.method === 'tools/call' && rpc.params?.name === 'show_slide') {
+    /* The one tool that waits: for the pages it pointed to say what they did. A refusal is an answer here too. */
+    return (async () => showSlide(rpc.params?.arguments ?? {}))().then(
+      (shown) => reply({ content: [{ type: 'text', text: shown.text }], structuredContent: shown.structuredContent }),
+      (e: unknown) => text(e instanceof Error ? e.message : String(e), true),
+    )
+  }
   if (rpc.method === 'tools/call') {
     try {
       return text(call(String(rpc.params?.name ?? ''), rpc.params?.arguments ?? {}))
@@ -482,7 +620,7 @@ export function answer(
   query: URLSearchParams,
   body: Record<string, unknown> | null,
   ticket: string | null,
-): Reply | null {
+): Reply | null | Promise<Reply> {
   if (path === '/healthz') {
     return ok({ id: ID, version: VERSION, where: `<project>/${KEHIKOT_DIR}/slides/<deck>.md` })
   }
@@ -550,6 +688,17 @@ export function answer(
     return ok({ state: moveTalk(root.value, slug, index, body?.blank === true) })
   }
 
+  /* A page saying what it did with a pointing. Nothing is kept: it is handed to the show_slide waiting for it. */
+  if (path === PATHS.pointer && method === 'POST') {
+    const root = projectRoot(project)
+    if (!root.ok) return refused(root)
+    const why = badSlug(slug)
+    if (why) return bad(why)
+    const did = POINTER_DID.find((one) => one === body?.did)
+    if (typeof body?.at !== 'number' || !did) return bad(`A page says which pointing (at) and what it did with it: ${POINTER_DID.join(', ')}.`)
+    return ok({ heard: heardPointer(root.value, slug, body.at, { did, hidden: body.hidden === true }) })
+  }
+
   /* An unknown path under /api/ is ours to refuse, not Vite's to serve as a file. */
   return bad('There is nothing here.', 404)
 }
@@ -563,20 +712,21 @@ export function stream(
   method: string,
   path: string,
   query: URLSearchParams,
-  emit: (event: DeckChange | PresentState) => void,
+  emit: (event: DeckChange | PresentState | PointerState) => void,
 ): { reply: Reply } | { close: () => void } | null {
   if (method !== 'GET') return null
   if (path === PATHS.watch) {
     const watched = watchDecks(query.get('project') ?? '', emit)
     return watched.ok ? { close: watched.value } : { reply: refused(watched) }
   }
-  if (path === PATHS.present) {
+  if (path === PATHS.present || path === PATHS.pointer) {
     const root = projectRoot(query.get('project'))
     if (!root.ok) return { reply: refused(root) }
     const slug = query.get('slug') ?? ''
     const why = badSlug(slug)
     if (why) return { reply: bad(why) }
-    return { close: followTalk(root.value, slug, emit) }
+    if (path === PATHS.present) return { close: followTalk(root.value, slug, emit) }
+    return { close: followPointer(root.value, slug, emit, query.get('presenting') === '1') }
   }
   return null
 }

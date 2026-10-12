@@ -236,6 +236,23 @@ describe('the deck as the ticks change', () => {
     expect(strip()).toEqual(['slide 3', 'slide 4'])
   })
 
+  test('a slide outside the pick that is pointed at from outside is drawn as the slide in hand', async () => {
+    const fake = fakeDecks({}, { text: DECK })
+    render(at(fake, ['methods']))
+    await waitFor(() => expect(strip()).toEqual(['slide 3', 'slide 4']))
+    fake.point(1, 10)
+    await waitFor(() => expect(onScreen()).toBe('Why'))
+    expect(strip()).toEqual(['slide 2', 'slide 3', 'slide 4'])
+    expect(counter()).toBe('1 of 3 · slide 2 of 5')
+    /* And the door is told it is outside the pick, which is what show_slide's answer then says. */
+    expect(fake.of('pointed').map((call) => call.args.slice(2))).toEqual([[10, 'outside', false]])
+    /* One inside the pick lets the slide in hand go, and is plainly shown. */
+    fake.point(2, 11)
+    await waitFor(() => expect(strip()).toEqual(['slide 3', 'slide 4']))
+    expect(fake.of('pointed').map((call) => call.args.slice(2)).at(-1)).toEqual([11, 'shown', false])
+    silent()
+  })
+
   test('a slide with typing that is not saved is not taken away by a tick', async () => {
     const fake = fakeDecks({}, { text: DECK })
     const view = render(at(fake, []))

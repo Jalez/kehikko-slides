@@ -31,7 +31,9 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     + 'paper when shown. `list_decks` and `read_deck` show what exists; read a deck before changing it. To draft a '
     + 'talk, use the paper module’s `list_sections` and `read_paper`, then `create_deck` and `write_deck` with one or '
     + 'more slides per section and speaker notes after a `Notes:` line, and `link_slide` each slide to its section. '
-    + '`edit_slide` changes one slide. Every write is kept in the deck’s history and the person can undo it, so give '
+    + '`edit_slide` changes one slide. `show_slide` turns the page to the slide you are talking about; it writes '
+    + 'nothing, counts slides from 0, and does not turn a talk. Another module points by setting the passage on the '
+    + 'deck’s file, with `page` counted from 1. Every write is kept in the deck’s history and the person can undo it, so give '
     + 'a one-line `summary` and your name as `agent`. Do not edit the .md files directly while the person is editing.',
   entry: '/app',
   modes: [{ id: 'slides', label: 'Slides', scope: 'epic' }],
@@ -39,8 +41,8 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     url: '/mcp',
     transport: 'http',
     about:
-      'Read, draft and edit presentation decks (Markdown slides) for a project, and link slides to paper sections. '
-      + 'Every write is recorded so the person can undo it.',
+      'Read, draft and edit presentation decks (Markdown slides) for a project, link slides to paper sections, and '
+      + 'show a slide on the page. Every write is recorded so the person can undo it.',
   },
   extensions: { emits: [], consumes: [] },
   /* A description, not a request: the deck moves to the slides for the section

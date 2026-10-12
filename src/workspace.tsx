@@ -16,7 +16,7 @@ import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
 import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { HeaderControls, OpenItYourself } from './controls.tsx'
-import { absolute, linkedToReading, passageFor, projectRelative, readingOf, samePath, type PassageLike, type Reading } from './follow.ts'
+import { absolute, linkedToReading, passageFor, passageKey, projectRelative, readingOf, samePath, slidePointed, type PassageLike, type Reading } from './follow.ts'
 import { anchorsOf as anchorsOfSlide } from './follow.ts'
 import { emptySaid, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
 import { openPage, pageUrl } from './open-window.ts'
@@ -193,6 +193,58 @@ export function Workspace({
     if (narrowing.focused) setHeld(current)
     doc.edit(next)
   }
+  /* A slide pointed at from outside this page: an agent's show_slide on the door, or another module's passage
+     naming this deck's file. Gone to once, as a move nobody here made — so it is not published to the paper — and
+     drawn though the picked parts leave it out, as the slide in hand is: the paper turning is not a reason to leave
+     the pick, and somebody naming this slide is. A page too narrow for both panes turns to the one the slide is
+     drawn in. What the door held when this page arrived was shown to an earlier page, and is not gone to. A talk is
+     not turned from outside: while presenting the door is told so and sends nothing, and a pointing that arrives
+     anyway is dropped, not kept for afterwards.
+
+     The door's pointing carries `at`, and is answered: what this page did with it, so that show_slide tells its
+     caller what is on a screen rather than what was sent. A passage is answered to nobody. */
+  const [pointed, setPointed] = useState<{ index: number; at: number | null } | null>(null)
+  const presenting = show.presenting !== null
+  useEffect(() => {
+    let seen: number | null = null
+    return decks.followPointer(project, slug, (state) => {
+      const arriving = seen === null
+      if (state.at === seen) return
+      seen = state.at
+      if (!arriving && state.at !== 0) setPointed({ index: state.index, at: state.at })
+    }, presenting)
+  }, [decks, project, slug, presenting])
+  const passed = passageKey(host.passage)
+  const answered = useRef<string | null>(null)
+  useEffect(() => {
+    if (!ready || answered.current === passed) return
+    answered.current = passed
+    const to = slidePointed(host.passage, project, slug, text)
+    if (to !== null) setPointed({ index: to, at: null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passed, ready])
+  useLayoutEffect(() => {
+    if (pointed === null || !ready) return
+    setPointed(null)
+    const { index, at } = pointed
+    const say = (did: 'shown' | 'outside' | 'stale' | 'presenting') => {
+      if (at === null) return
+      void decks.pointed(project, slug, at, did, typeof document !== 'undefined' && document.visibilityState === 'hidden').catch(() => {
+        /* The door is gone or the page is older than it: there is nobody to tell. */
+      })
+    }
+    if (presenting) return say('presenting')
+    if (index >= deck.slides.length) return say('stale')
+    const outside = narrowing.focused && !focus.inFocus(anchorsNow(index))
+    setTab('preview')
+    if (index !== current) {
+      setHeld(outside ? index : null)
+      steer(index)
+      goTo(index)
+    } else if (outside) setHeld(index)
+    say(outside ? 'outside' : 'shown')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointed, ready])
   useTalk({
     decks,
     project,
