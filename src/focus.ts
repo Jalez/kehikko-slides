@@ -1,4 +1,4 @@
-import { emptySaid, partsOfFile, type Anchor } from 'kehikot-module-protocol'
+import { emptySaid, type Anchor } from 'kehikot-module-protocol'
 import type { Focus } from 'kehikot-module-protocol/client/react'
 
 import type { Slide } from '../deck/format.ts'
@@ -34,10 +34,10 @@ import { anchorOf } from './follow.ts'
  * ## Which slides are in a part
  *
  * A slide is in a picked part when the file of the section it is linked to,
- * or of any passage it cites, is one that part has. The title slide and the
- * closing one, when nothing ties them to a part, are part of every part and
- * are shown under any pick. Any other slide tied to no part is outside every
- * pick, like a step filed under none.
+ * or of any passage it cites, is one that part has. A slide tied to no part —
+ * a title slide, a closing one, one linked only to a file no part has — is
+ * outside every pick, like a step filed under none and like the paper's own
+ * front matter.
  *
  * ## The slide in hand
  *
@@ -61,13 +61,6 @@ export interface Narrowing {
   shown: number[]
   /** The slide shown although it is outside the pick, because the person is in it. Null when there is none. */
   held: number | null
-  /**
-   * Of `shown`, the slides that are in the pick by their own source: not the
-   * title or closing slide that is part of every part, and not the one held.
-   * Where the deck goes when a pick leaves the slide on screen out: to the
-   * part's own slides, as it did before the title slide was shown with them.
-   */
-  sourced: number[]
   /** The protocol's sentence for a preview the pick left with no slide. `''` when nothing is picked. */
   empty: string
 }
@@ -75,16 +68,11 @@ export interface Narrowing {
 /** What one item is called in the protocol's sentence for an empty preview. */
 export const NOUN = 'slide'
 
-/**
- * Each slide's anchors, by its index: `anchorOf` with what it is read against
- * — the project, the slide's place in the deck, and whether a part of the
- * epic has a file (asked of the protocol, `partsOfFile`).
- */
-export function anchorsIn(focus: Focus, slides: readonly Slide[], project: string, epic: string | null): (index: number) => Anchor[] {
-  const tied = (file: string) => partsOfFile(focus.parts, file, epic, project).length > 0
+/** Each slide's anchors, by its index into the deck. An index the deck does not have answers none. */
+export function anchorsIn(slides: readonly Slide[], project: string): (index: number) => Anchor[] {
   return (index) => {
     const slide = slides[index]
-    return slide ? anchorOf(slide, { project, index, count: slides.length, tied }) : []
+    return slide ? anchorOf(slide, project) : []
   }
 }
 
@@ -92,18 +80,14 @@ export function narrowDeck(
   focus: Focus,
   slides: readonly Slide[],
   project: string,
-  epic: string | null,
   held: number | null,
 ): Narrowing {
   const all = slides.map((_, index) => index)
-  const anchors = anchorsIn(focus, slides, project, epic)
-  const narrowed = focus.narrow(all, anchors, { noun: NOUN, keep: (index) => index === held })
-  const kept = focus.focused && narrowed.kept > 0 ? held : null
+  const narrowed = focus.narrow(all, anchorsIn(slides, project), { noun: NOUN, keep: (index) => index === held })
   return {
     focused: focus.focused,
     shown: narrowed.shown,
-    held: kept,
-    sourced: narrowed.shown.filter((index) => index !== kept && !anchors(index).some((anchor) => 'whole' in anchor)),
+    held: focus.focused && narrowed.kept > 0 ? held : null,
     empty: emptySaid(focus.parts, NOUN),
   }
 }

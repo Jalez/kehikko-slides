@@ -104,10 +104,10 @@ export function Workspace({
   const focus = useFocus(host)
   const [held, setHeld] = useState<number | null>(null)
   const narrowing = useMemo(
-    () => narrowDeck(focus, deck.slides, project, host.epic ?? null, held === current ? held : null),
-    [focus, deck.slides, project, host.epic, held, current],
+    () => narrowDeck(focus, deck.slides, project, held === current ? held : null),
+    [focus, deck.slides, project, held, current],
   )
-  const anchorsNow = useMemo(() => anchorsIn(focus, deck.slides, project, host.epic ?? null), [focus, deck.slides, project, host.epic])
+  const anchorsNow = useMemo(() => anchorsIn(deck.slides, project), [deck.slides, project])
   const { shown: listed } = narrowing
   /* The slide in front, as an index into the deck: null when the pick leaves this one out and nothing holds it. */
   const front = !narrowing.focused || listed.includes(current) ? current : null
@@ -168,8 +168,7 @@ export function Workspace({
   })
 
   /* The ticks changed, or nothing is in front. A slide the person is in the middle of typing in is held though the
-     new pick leaves it out; any other is let go, and the deck goes to the shown slide nearest it — one of the picked
-     parts' own before the title or closing slide, which are shown under every pick. Not published as a
+     new pick leaves it out; any other is let go, and the deck goes to the shown slide nearest it. Not published as a
      move — nobody chose that slide, and the paper answers the same tick itself (`steer`). Before the paint, so the
      old slide is never drawn under the new pick. */
   const ticks = focus.parts.filter((part) => part.picked).map((part) => part.id).join('\n')
@@ -185,12 +184,12 @@ export function Workspace({
       if (hold) return
     }
     if (!ready || front !== null) return
-    const to = nearestShown(narrowing.sourced, current) ?? nearestShown(listed, current)
+    const to = nearestShown(listed, current)
     if (to === null) return
     steer(to)
     goTo(to)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticks, ready, front, listed, narrowing.sourced, current, steer])
+  }, [ticks, ready, front, listed, current, steer])
   /* The caret was put in a slide by hand, in the Markdown: if the pick leaves that slide out, it is the one in hand. */
   const onCaret = (at: number) => {
     setCaret(at)
