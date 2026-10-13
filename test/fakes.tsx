@@ -32,7 +32,8 @@ export const following = () => {
   const words = !it ? '' : it.checked ? it.label : 'Not following'
   return { textContent: words, getAttribute: (name: string) => (name === 'aria-pressed' ? String(it?.checked) : name === 'aria-label' ? words : null) }
 }
-export const toggleFollowing = () => press('following', !item<'toggle'>('following')!.checked)
+/* Following is on until somebody turns it off, which is also what is true before the first declaration lands. */
+export const toggleFollowing = () => press('following', !(item<'toggle'>('following')?.checked ?? true))
 /** Which pane a page too narrow for both has in front. */
 export const pane = () => document.querySelector('[data-pane]')?.getAttribute('data-pane') ?? null
 

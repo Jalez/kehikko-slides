@@ -276,7 +276,8 @@ describe('history', () => {
 describe('the header the host draws', () => {
   test('there is no row of controls in the page: every one is declared, in the menu its kind names', async () => {
     draw(fakeDecks())
-    await waitFor(() => expect(item('present')).toBeDefined())
+    await waitFor(() => expect(item<'go'>('slide')?.label).toBe('Slide 1 of 3'))
+    await waitFor(() => expect(following().getAttribute('aria-label')).toBe('Following the paper'))
     expect(wire.items.map((one) => `${one.kind} ${one.id}`)).toEqual([
       'switch mode',
       'toggle following',
