@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
-import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 
 import { useFocus } from 'kehikot-module-protocol/client/react'
 
@@ -9,15 +8,16 @@ import type { Editor } from '@/editor/deck-editor'
 import { cn } from '@/lib/utils'
 import { SlideView } from '@/slides/slide-view'
 import type { Decks } from '@/wire/decks'
-import type { Host } from '@/wire/use-kehikot'
+import type { Host, Press } from '@/wire/use-kehikot'
 
 import type { CitationView, WatchEvent } from '../deck/api.ts'
 import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
-import { parseDeck, setSection, slideAt, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
-import { HeaderControls, OpenItYourself } from './controls.tsx'
+import { parseDeck, setSection, slideAt, slideHeadline, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
+import { followingLabel, OpenItYourself } from './controls.tsx'
 import { absolute, linkedToReading, passageFor, passageKey, projectRelative, readingOf, samePath, slidePointed, type PassageLike, type Reading } from './follow.ts'
 import { anchorsIn, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
+import type { Work } from './header.ts'
 import { openPage, pageUrl } from './open-window.ts'
 import { Stage, usePresenting } from './stage.tsx'
 import { useTalk } from './talk.ts'
@@ -30,12 +30,14 @@ import { useFollowing } from './use-following.ts'
  * The caret is the one source of truth for "the current slide": the editor
  * reports it, `slideAt` maps it, and a thumbnail press moves it (and asks the
  * editor to follow). Wide, the three panes sit side by side; in a container
- * narrower than 720px they collapse to Edit / Preview tabs. That switch is a
- * container query, so the frame's own width decides, not the window's.
+ * narrower than 720px they collapse to one pane, Edit or Preview. That switch
+ * is a container query, so the frame's own width decides, not the window's.
  *
- * The deck's header controls (following, present, PDF) are drawn into the
- * screen's header through a portal at `header`: they act on the slide on
- * screen, and that lives here.
+ * There is no row of controls here. Which pane, following, the slides to go
+ * to, Present, Presenter view and Export PDF act on the slide on screen, which
+ * lives here — so this says what they are (`onWork`) and takes the presses on
+ * them (`act`), and the screen declares them to the host with its own
+ * (`header.ts`).
  */
 export function Workspace({
   decks,
@@ -47,8 +49,8 @@ export function Workspace({
   theme,
   saveDelay,
   publishDelay,
-  header,
-  onHistory,
+  onWork,
+  act,
   onState,
 }: {
   decks: Decks
@@ -61,10 +63,10 @@ export function Workspace({
   saveDelay?: number
   /** How long a move waits before the paper is turned; tests shorten it. */
   publishDelay?: number
-  /** Where the header controls go; null draws none. */
-  header: HTMLElement | null
-  /** The History control was pressed; the screen owns that dialog. */
-  onHistory(): void
+  /** What this deck's header items are made of, said when it changes; null when the deck is gone from the screen. */
+  onWork(work: Work | null): void
+  /** Where this puts what takes a press on one of its items. It answers `undefined` for an item that is not its own. */
+  act: MutableRefObject<Press | null>
   onState(state: SaveState): void
 }) {
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
@@ -315,25 +317,63 @@ export function Workspace({
     if (next !== null && next !== text) doc.edit(next)
   }
 
-  const controls = header
-    ? createPortal(
-        <>
-          <HeaderControls
-            following={following}
-            presenting={show.presenting !== null}
-            reading={reading}
-            missing={followed.missing}
-            aside={followed.aside}
-            onToggleFollowing={() => setFollowing((on) => !on)}
-            onPresent={show.start}
-            onPresenterView={() => open('The presenter view', './app', { presenter: slug })}
-            onExport={() => open('The print view', './print', { deck: slug })}
-            onHistory={onHistory}
-          />
-        </>,
-        header,
-      )
-    : null
+  /*
+   * What the header's items are made of. The slides are named by their headlines AS LAST SAVED, and
+   * counted as last saved: the list is declared to the host whenever it changes, and one that
+   * followed the text would be declared at every key pressed in a headline. A save says it once.
+   */
+  const [saved, setSaved] = useState<string | null>(null)
+  useEffect(() => {
+    if (doc.state === 'saved' && doc.text !== null) setSaved(doc.text)
+  }, [doc.state, doc.text])
+  const headlines = useMemo(() => (saved === null ? [] : parseDeck(saved, slug).slides.map(slideHeadline)), [saved, slug])
+  const work = useMemo<Work | null>(
+    () =>
+      saved === null
+        ? null
+        : {
+            tab,
+            following,
+            followingSays: followingLabel(following, presenting, followed.missing, followed.aside),
+            slides: listed.filter((index) => index < headlines.length).map((index) => ({ index, headline: headlines[index]! })),
+            current: front === null ? null : Math.min(front, Math.max(0, headlines.length - 1)),
+            count: headlines.length,
+            presenting,
+          },
+    [saved, tab, following, presenting, followed.missing, followed.aside, listed, headlines, front],
+  )
+  const workKey = JSON.stringify(work)
+  useEffect(() => {
+    onWork(work)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workKey, onWork])
+  useEffect(() => () => onWork(null), [onWork])
+
+  act.current = ({ item, value }) => {
+    if (item === 'mode') setTab(value === 'preview' ? 'preview' : 'edit')
+    else if (item === 'following') setFollowing(value === true)
+    else if (item === 'slide') {
+      const to = typeof value === 'string' && value.startsWith('s') ? Number(value.slice(1)) : -1
+      if (!listed.includes(to)) return 'That slide is not among the slides shown now.'
+      /* The person's own press, as a thumbnail's is — the paper is turned with it — but made in the host's menu:
+         the keyboard is left where it is. */
+      goTo(to)
+      setTab('preview')
+    } else if (item === 'present') {
+      /* The keys that step a talk are heard in this frame, and the press was made in the host's. */
+      if (typeof window !== 'undefined') window.focus()
+      show.start()
+    } else if (item === 'presenter') open('The presenter view', './app', { presenter: slug })
+    else if (item === 'export') open('The print view', './print', { deck: slug })
+    else return undefined
+    return true
+  }
+  useEffect(
+    () => () => {
+      act.current = null
+    },
+    [act],
+  )
 
   if (doc.text === null) {
     return (
@@ -344,8 +384,7 @@ export function Workspace({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {controls}
+    <div className="flex min-h-0 flex-1 flex-col" data-pane={tab}>
       <Stage
         stage={stage}
         presenting={show.presenting}
@@ -353,6 +392,7 @@ export function Workspace({
         aspect={deck.aspect}
         blank={show.blank}
         note={show.note}
+        onPress={show.full}
       />
       {blocked ? <OpenItYourself what={blocked.what} url={blocked.url} onDismiss={() => setBlocked(null)} /> : null}
       {doc.notice ? (
@@ -370,22 +410,6 @@ export function Workspace({
           </Button>
         </div>
       ) : null}
-
-      <div role="tablist" className="flex gap-1 border-b px-2 py-1 @min-[720px]:hidden">
-        {(['edit', 'preview'] as const).map((one) => (
-          <Button
-            key={one}
-            role="tab"
-            aria-selected={tab === one}
-            variant={tab === one ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-6 px-2 text-xs"
-            onClick={() => setTab(one)}
-          >
-            {one === 'edit' ? 'Edit' : 'Preview'}
-          </Button>
-        ))}
-      </div>
 
       <div className="flex min-h-0 flex-1">
         <nav

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { Screen, byEpic } from '../src/app.tsx'
-import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, host, jumps, pause, preview, type } from './fakes.tsx'
+import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, following, host, item, jumps, pause, press, preview, type, wire } from './fakes.tsx'
 
 afterEach(cleanup)
 
@@ -47,7 +47,7 @@ describe('the deck switcher', () => {
     expect(ordered.map((deck) => deck.slug)).toEqual(['m', 'z', 'a', 'b'])
   })
 
-  test('shows the open deck, and renames and removes through the store', async () => {
+  test('the decks are a Go item naming the open one; a new name is asked in a dialog, and removing takes a second press', async () => {
     const fake = fakeDecks(
       {},
       {
@@ -58,22 +58,40 @@ describe('the deck switcher', () => {
       },
     )
     draw(fake)
-    const trigger = await screen.findByRole('button', { name: /Defence/ })
-    expect(trigger).toBeDefined()
+    await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Defence'))
+    expect(item<'go'>('deck')!.options.map((one) => one.label)).toEqual(['Defence', 'Another talk'])
+    /* No strip of its own: no switcher button, no header row. */
+    expect(document.querySelector('header')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Defence/ })).toBeNull()
 
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
-    const rows = await screen.findAllByRole('menuitem')
-    expect(rows.map((row) => row.textContent)).toEqual(['Defence', 'Another talk', 'new deck…'])
-
-    fireEvent.click(screen.getByLabelText('rename Another talk'))
+    press('deck', 'd1')
+    await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Another talk'))
+    press('deck-rename')
     const field = await screen.findByLabelText('deck name')
+    expect((field as HTMLInputElement).value).toBe('Another talk')
     fireEvent.change(field, { target: { value: 'Seminar' } })
     fireEvent.click(screen.getByRole('button', { name: 'save' }))
     await waitFor(() => expect(fake.of('retitle')[0]?.args).toEqual(['/work/thesis', 'other', 'Seminar']))
+    await waitFor(() => expect(item<'run'>('deck-remove')?.label).toBe('Remove “Seminar”'))
 
-    fireEvent.click(await screen.findByLabelText('remove Seminar'))
-    fireEvent.click(screen.getByText('remove it?'))
+    /* The second press is the host's to ask for (`confirm`), so no agent can make it; the page does it when told. */
+    expect(item<'run'>('deck-remove')).toMatchObject({ confirm: true })
+    expect(item<'run'>('deck-remove')!.agents).toBeUndefined()
+    press('deck-remove')
     await waitFor(() => expect(fake.of('remove')[0]?.args).toEqual(['/work/thesis', 'other']))
+
+    press('deck-new')
+    fireEvent.change(await screen.findByLabelText('deck name'), { target: { value: 'Viva' } })
+    fireEvent.click(screen.getByRole('button', { name: 'save' }))
+    await waitFor(() => expect(fake.of('create')[0]?.args).toEqual(['/work/thesis', 'Viva', 'write-chapter-two']))
+  })
+
+  test('F2 asks for a new name for the open deck, from anywhere in the page', async () => {
+    draw(fakeDecks())
+    await waitFor(() => expect(editor().value).toBe(DECK))
+    expect(item<'run'>('deck-rename')!.shortcut).toBe('F2')
+    fireEvent.keyDown(window, { key: 'F2' })
+    expect(((await screen.findByLabelText('deck name')) as HTMLInputElement).value).toBe('Defence')
   })
 })
 
@@ -90,50 +108,51 @@ describe('following the epic', () => {
     const view = render(at(epic))
     return { fake, turn: (epic: string | null) => view.rerender(at(epic)) }
   }
-  const shown = (name: RegExp) => screen.findByRole('button', { name })
+  /** The deck that is open, as the Go item names it. */
+  const open = () => item<'go'>('deck')?.label.replace(/^Decks · /, '')
+  const shown = (name: string) => waitFor(() => expect(open()).toBe(name))
   const pick = async (name: string) => {
-    fireEvent.pointerDown(screen.getByRole('button', { name: /Catalog|Durable/ }), { button: 0, ctrlKey: false })
-    const rows = await screen.findAllByRole('menuitem')
-    fireEvent.click(rows.find((row) => row.textContent === name) as HTMLElement)
+    const deck = item<'go'>('deck')!
+    press('deck', deck.options.find((one) => one.label === name)!.id)
   }
 
   test('a new epic opens its first deck', async () => {
     const run = drawOn('catalog')
-    expect(await shown(/^Catalog$/)).toBeDefined()
+    await shown('Catalog')
     run.turn('durable-writes')
-    expect(await shown(/^Durable writes$/)).toBeDefined()
+    await shown('Durable writes')
     await waitFor(() => expect(run.fake.of('read').at(-1)?.args).toEqual(['/work/thesis', 'durable']))
     run.turn('catalog')
-    expect(await shown(/^Catalog$/)).toBeDefined()
+    await shown('Catalog')
   })
 
   test('an epic with no deck leaves the open deck where it is', async () => {
     const run = drawOn('durable-writes')
-    expect(await shown(/^Durable writes$/)).toBeDefined()
+    await shown('Durable writes')
     run.turn('nothing-here')
     await pause(10)
-    expect(screen.getByRole('button', { name: /^Durable writes$/ })).toBeDefined()
+    expect(open()).toBe('Durable writes')
     run.turn(null)
     await pause(10)
-    expect(screen.getByRole('button', { name: /^Durable writes$/ })).toBeDefined()
+    expect(open()).toBe('Durable writes')
   })
 
   test('a deck picked by hand stays open until the epic changes again', async () => {
     const run = drawOn('catalog')
-    expect(await shown(/^Catalog$/)).toBeDefined()
+    await shown('Catalog')
     await pick('Durable writes')
-    expect(await shown(/^Durable writes$/)).toBeDefined()
+    await shown('Durable writes')
 
     /* The host says the same epic again (any context does): that is not a change. */
     run.turn('catalog')
     await pause(10)
-    expect(screen.getByRole('button', { name: /^Durable writes$/ })).toBeDefined()
+    expect(open()).toBe('Durable writes')
 
     run.turn('durable-writes')
     await pick('Catalog, the long one')
-    expect(await shown(/^Catalog, the long one$/)).toBeDefined()
+    await shown('Catalog, the long one')
     run.turn('catalog')
-    expect(await shown(/^Catalog$/)).toBeDefined()
+    await shown('Catalog')
   })
 })
 
@@ -247,70 +266,112 @@ describe('history', () => {
     )
     draw(fake)
     await waitFor(() => expect(editor().value).toBe(DECK))
-    fireEvent.click(screen.getByRole('button', { name: /History/ }))
+    press('history')
     expect(await screen.findByText('add results slide')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'undo add results slide' }))
     await waitFor(() => expect(fake.of('undo')[0]?.args).toEqual(['/work/thesis', 'defence', 'h1']))
   })
 })
 
-describe('header', () => {
-  const NAMES = ['Present', 'Presenter view', 'Export PDF', 'History']
-
-  test('is one non-wrapping row, a container the controls respond to', async () => {
+describe('the header the host draws', () => {
+  test('there is no row of controls in the page: every one is declared, in the menu its kind names', async () => {
     draw(fakeDecks())
-    await waitFor(() => expect(editor().value).toBe(DECK))
-    const header = document.querySelector('header')!
-    expect(header.className).toContain('@container')
-    expect(header.className).toContain('flex-nowrap')
-    expect(header.className).not.toContain('flex-wrap')
+    await waitFor(() => expect(item('present')).toBeDefined())
+    expect(wire.items.map((one) => `${one.kind} ${one.id}`)).toEqual([
+      'switch mode',
+      'toggle following',
+      'go deck',
+      'go slide',
+      'run present',
+      'run presenter',
+      'run export',
+      'run history',
+      'run deck-new',
+      'run deck-rename',
+      'run deck-remove',
+    ])
+    expect(document.querySelector('header')).toBeNull()
+    expect(document.querySelector('[role="tablist"]')).toBeNull()
+    for (const name of ['Present', 'Presenter view', 'Export PDF', 'History', 'More actions']) expect(screen.queryByRole('button', { name })).toBeNull()
+    expect(item<'switch'>('mode')).toMatchObject({ value: 'edit', options: [{ id: 'edit', label: 'Edit' }, { id: 'preview', label: 'Preview' }] })
+    expect(following().getAttribute('aria-label')).toBe('Following the paper')
+    /* An agent turns the page with the door's tool, and is sent there; nothing here is an agent's to press. */
+    expect(item<'go'>('slide')).toMatchObject({ tool: 'show_slide', label: 'Slide 1 of 3' })
+    expect(item<'go'>('slide')!.options).toEqual([
+      { id: 's0', label: '1. Bridging the gap' },
+      { id: 's1', label: '2. The problem' },
+      { id: 's2', label: '3. The answer' },
+    ])
+    expect(wire.items.some((one) => one.agents)).toBe(false)
   })
 
-  test('every action is an icon button with an accessible name', async () => {
-    draw(fakeDecks())
-    await waitFor(() => expect(editor().value).toBe(DECK))
-    const inline = screen.getByTestId('header-inline')
-    for (const name of NAMES.slice(1)) {
-      const button = inline.querySelector(`button[aria-label="${name}"]`)
-      expect(button).not.toBeNull()
-      expect(button?.textContent).toBe('')
-    }
-    expect(screen.getByRole('button', { name: 'Present' })).toBeDefined()
-    expect(screen.getByTestId('following').getAttribute('aria-label')).toBe('Following the paper')
-  })
-
-  test('the narrow save state is a dot with the word as its name', async () => {
-    draw(fakeDecks())
-    await waitFor(() => expect(screen.getByTestId('save-state').textContent).toBe('saved'))
-    expect(screen.getByRole('img', { name: 'saved' })).toBeDefined()
-  })
-
-  test('narrow, the More menu holds following, Presenter view, Export PDF and History', async () => {
+  test('a press does what the control did, and the header says the new state', async () => {
     const fake = fakeDecks(
       {},
       { history: [{ id: 'h1', slug: 'defence', at: '2026-10-01T10:00:00Z', agent: 'claude', summary: 'add results slide' }] },
     )
     draw(fake)
-    await waitFor(() => expect(editor().value).toBe(DECK))
-    const more = screen.getByRole('button', { name: 'More actions' })
-    expect(screen.getByTestId('header-more').className).toContain('@min-[400px]:hidden')
-    expect(screen.getByTestId('header-inline').className).toContain('@min-[400px]:flex')
-
-    fireEvent.keyDown(more, { key: 'Enter' })
-    const follow = await screen.findByRole('menuitemcheckbox', { name: 'Follow the paper' })
-    expect(follow.getAttribute('aria-checked')).toBe('true')
-    for (const name of NAMES.slice(1)) expect(screen.getByRole('menuitem', { name })).toBeDefined()
-
-    fireEvent.click(screen.getByRole('menuitem', { name: 'History' }))
+    await waitFor(() => expect(item('present')).toBeDefined())
+    expect(press('mode', 'preview')).toBe(true)
+    await waitFor(() => expect(item<'switch'>('mode')!.value).toBe('preview'))
+    press('slide', 's2')
+    await waitFor(() => expect(item<'go'>('slide')!.label).toBe('Slide 3 of 3'))
+    expect(preview().getByRole('heading').textContent).toBe('The answer')
+    expect(press('slide', 's9')).toBe('That slide is not among the slides shown now.')
+    /* The state wanted, not "flip": said twice, it changes nothing. */
+    press('following', false)
+    press('following', false)
+    await waitFor(() => expect(item<'toggle'>('following')).toMatchObject({ checked: false, label: 'Follow the paper' }))
+    press('history')
     expect(await screen.findByText('add results slide')).toBeDefined()
+    expect(press('nonsense')).toBe('That is not something these slides have.')
   })
 
-  test('the following item in the More menu toggles the same state as the button', async () => {
+  test('typing declares nothing; a headline that changed is said once, when it is saved', async () => {
+    draw(fakeDecks(), {}, 40)
+    await waitFor(() => expect(item('present')).toBeDefined())
+    await pause(60)
+    const before = wire.declared
+    let text = editor().value
+    for (const key of 'fourteen keys.') {
+      text = text.replace('- one', `- one${key}`)
+      type(text)
+    }
+    expect(wire.declared).toBe(before)
+    await waitFor(() => expect(screen.getByTestId('save-state').textContent).toBe('saved'))
+    await pause(30)
+    expect(wire.declared).toBe(before)
+    let headline = '## The problem'
+    for (const key of 'now') {
+      text = text.replace(headline, headline + key)
+      headline += key
+      type(text)
+    }
+    expect(wire.declared).toBe(before)
+    await waitFor(() => expect(item<'go'>('slide')!.options[1]!.label).toBe('2. The problemnow'))
+    expect(wire.declared).toBe(before + 1)
+  })
+
+  test('whether it is saved is a dot with the word as its name, and the word where there is room', async () => {
     draw(fakeDecks())
-    await waitFor(() => expect(editor().value).toBe(DECK))
-    const more = screen.getByRole('button', { name: 'More actions' })
-    fireEvent.keyDown(more, { key: 'Enter' })
-    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Follow the paper' }))
-    await waitFor(() => expect(screen.getByTestId('following').getAttribute('aria-pressed')).toBe('false'))
+    await waitFor(() => expect(screen.getByTestId('save-state').textContent).toBe('saved'))
+    expect(screen.getByRole('img', { name: 'saved' })).toBeDefined()
+  })
+
+  test('the page’s own menu is there until a host has pressed, with the same items behind it', async () => {
+    const fake = fakeDecks()
+    const view = draw(fake)
+    await waitFor(() => expect(item('present')).toBeDefined())
+    const menu = screen.getByTestId('header-menu')
+    fireEvent.keyDown(menu, { key: 'Enter' })
+    const follow = await screen.findByRole('menuitemcheckbox', { name: 'Following the paper' })
+    expect(follow.getAttribute('aria-checked')).toBe('true')
+    for (const name of ['Present', 'Presenter view', 'Export PDF', 'History', 'New deck…']) expect(screen.getByRole('menuitem', { name })).toBeDefined()
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Preview' }))
+    await waitFor(() => expect(item<'switch'>('mode')!.value).toBe('preview'))
+    view.unmount()
+    render(<Screen host={host({ pressed: true })} decks={fake.decks} editor={FakeEditor} saveDelay={20} />)
+    await waitFor(() => expect(item('present')).toBeDefined())
+    expect(screen.queryByTestId('header-menu')).toBeNull()
   })
 })

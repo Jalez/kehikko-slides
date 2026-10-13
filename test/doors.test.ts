@@ -157,6 +157,13 @@ describe('the MCP door', () => {
     ])
   })
 
+  test('every tool says whether it only reads, and which writes replace what was there', () => {
+    const tools = (rpc('tools/list').result?.tools ?? []) as unknown as { name: string; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }[]
+    expect(tools.every((one) => typeof one.annotations?.readOnlyHint === 'boolean' && typeof one.annotations.destructiveHint === 'boolean')).toBe(true)
+    expect(tools.filter((one) => one.annotations!.readOnlyHint).map((one) => one.name)).toEqual(['list_decks', 'read_deck', 'show_slide'])
+    expect(tools.filter((one) => one.annotations!.destructiveHint).map((one) => one.name)).toEqual(['write_deck', 'edit_slide'])
+  })
+
   test('every write is recorded in the history, under the agent’s name', () => {
     const dir = project('mcp-writes')
     expect(tool('create_deck', { project: dir, title: 'Talk', epic: 'thesis', agent: 'claude' }).error).toBe(false)

@@ -8,7 +8,7 @@ import { PrintView } from '../src/print.tsx'
 import { FALLBACK_NOTE } from '../src/stage.tsx'
 import { decks as realDecks } from '../src/wire/decks.ts'
 import type { Host } from '../src/wire/use-kehikot.ts'
-import { DECK, FakeEditor, editor, fakeDecks, host, pause, preview } from './fakes.tsx'
+import { DECK, editor, fakeDecks, FakeEditor, following, host, pause, press, preview, toggleFollowing } from './fakes.tsx'
 
 afterEach(cleanup)
 
@@ -67,7 +67,6 @@ function drawFollowing(text = LINKED, over: Partial<Host> = {}) {
 
 const heading = () => preview().getByRole('heading').textContent
 const position = () => preview().getByTestId('position').textContent
-const following = () => screen.getByTestId('following')
 
 describe('following the paper', () => {
   test('a new section moves the slides to the first slide linked to it, without publishing back', async () => {
@@ -129,8 +128,8 @@ describe('following the paper', () => {
   test('turned off, neither direction happens', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
-    fireEvent.click(following())
-    expect(following().getAttribute('aria-pressed')).toBe('false')
+    toggleFollowing()
+    await waitFor(() => expect(following().getAttribute('aria-pressed')).toBe('false'))
     run.read(reading('The problem'))
     fireEvent.click(await screen.findByRole('button', { name: 'slide 3' }))
     await pause(20)
@@ -138,7 +137,7 @@ describe('following the paper', () => {
     expect(heading()).toBe('Results')
 
     /* Back on: it catches up with where the paper is. */
-    fireEvent.click(following())
+    toggleFollowing()
     await waitFor(() => expect(heading()).toBe('The problem'))
   })
 })
@@ -189,7 +188,7 @@ describe('presenting', () => {
   test('without the Fullscreen API it fills the window and says so; keys move and post the talk', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
-    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    press('present')
     expect(stage().getAttribute('data-presenting')).toBe('window')
     expect(within(stage()).getByRole('status').textContent).toBe(FALLBACK_NOTE)
     await waitFor(() => expect(run.fake.of('present').map((call) => call.args.slice(2))).toEqual([[0, false]]))
@@ -218,7 +217,7 @@ describe('presenting', () => {
   test('following is paused while presenting, publishing is not', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
-    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    press('present')
     run.read(reading('The problem'))
     await pause(10)
     expect(position()).toBe('1 / 3')
@@ -236,7 +235,7 @@ describe('presenting', () => {
     try {
       const run = drawFollowing()
       await waitFor(() => expect(editor().value).toBe(LINKED))
-      fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+      press('present')
       expect(asked === stage()).toBe(true)
       expect(stage().getAttribute('data-presenting')).toBe('fullscreen')
       expect(within(stage()).queryByRole('status')).toBeNull()
@@ -253,7 +252,7 @@ describe('presenting', () => {
   test('a move from the presenter view moves the stage; its own echo does not', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
-    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    press('present')
     /* What the server held from an earlier talk is not where this one is. */
     await run.fake.talk({ index: 2, blank: false, at: 1 })
     expect(position()).toBe('1 / 3')
@@ -309,12 +308,12 @@ describe('windows of their own', () => {
     try {
       drawFollowing()
       await waitFor(() => expect(editor().value).toBe(LINKED))
-      fireEvent.click(screen.getByRole('button', { name: 'Presenter view' }))
+      press('presenter')
       expect(opened[0]).toBe('http://127.0.0.1:7990/app?presenter=defence&project=%2Fwork%2Fthesis&theme=dark')
       expect(screen.getByText(/Open it in your browser/)).toBeDefined()
       expect((screen.getByLabelText('The presenter view address') as HTMLInputElement).value).toBe(opened[0] ?? '')
 
-      fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }))
+      press('export')
       expect(opened[1]).toBe('http://127.0.0.1:7990/print?deck=defence&project=%2Fwork%2Fthesis&theme=dark')
       expect((screen.getByLabelText('The print view address') as HTMLInputElement).value).toBe(opened[1] ?? '')
     } finally {
@@ -368,7 +367,7 @@ describe('windows of their own', () => {
     /* The strip draws every slide. */
     await waitFor(() => expect(pictures()).toEqual([DOOR]))
     fireEvent.keyDown(window, { key: 'End' })
-    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    press('present')
     fireEvent.keyDown(window, { key: 'End' })
     await waitFor(() => expect(pictures(screen.getByTestId('stage'))).toEqual([DOOR]))
     expect(pictures().every((src) => src === DOOR)).toBe(true)
