@@ -151,10 +151,12 @@ export function Stage({
     <div
       ref={stage}
       data-testid="stage"
+      /* Focusable, so the frame can be given the keyboard when a talk is started from outside it. */
+      tabIndex={-1}
       data-presenting={presenting ?? undefined}
       role={presenting ? 'dialog' : undefined}
       aria-label={presenting ? 'presenting' : undefined}
-      className={presenting ? 'fixed inset-0 z-50 flex bg-black' : 'hidden'}
+      className={presenting ? 'fixed inset-0 z-50 flex bg-black outline-none' : 'hidden'}
       onClick={presenting === 'window' ? onPress : undefined}
     >
       {presenting && slide && !blank ? <SlideView slide={slide} aspect={aspect} /> : null}

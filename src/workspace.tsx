@@ -360,9 +360,17 @@ export function Workspace({
       goTo(to)
       setTab('preview')
     } else if (item === 'present') {
-      /* The keys that step a talk are heard in this frame, and the press was made in the host's. */
-      if (typeof window !== 'undefined') window.focus()
       show.start()
+      /* The keys that step a talk are heard in this frame, and the press was made in the host's page — whose
+         menu, closing, puts the keyboard back on its own trigger a moment later. So the keyboard is taken now,
+         and again once that has happened. */
+      const take = () => {
+        if (typeof window !== 'undefined') window.focus()
+        stage.current?.focus({ preventScroll: true })
+      }
+      take()
+      setTimeout(take, 80)
+      setTimeout(take, 350)
     } else if (item === 'presenter') open('The presenter view', './app', { presenter: slug })
     else if (item === 'export') open('The print view', './print', { deck: slug })
     else return undefined

@@ -249,6 +249,30 @@ describe('presenting', () => {
     }
   })
 
+  test('refused full screen — a press made in the host’s menu is no gesture here — fills the window, and a press on the slide takes the screen', async () => {
+    const proto = HTMLElement.prototype as unknown as { requestFullscreen?: () => Promise<void> }
+    let gesture = false
+    let asked = 0
+    proto.requestFullscreen = function () {
+      asked += 1
+      return gesture ? Promise.resolve() : Promise.reject(new Error('not from a gesture'))
+    }
+    try {
+      drawFollowing()
+      await waitFor(() => expect(editor().value).toBe(LINKED))
+      press('present')
+      await waitFor(() => expect(stage().getAttribute('data-presenting')).toBe('window'))
+      expect(within(stage()).getByRole('status').textContent).toBe(FALLBACK_NOTE)
+      gesture = true
+      fireEvent.click(stage())
+      await waitFor(() => expect(stage().getAttribute('data-presenting')).toBe('fullscreen'))
+      expect(asked).toBe(2)
+      expect(within(stage()).queryByRole('status')).toBeNull()
+    } finally {
+      delete proto.requestFullscreen
+    }
+  })
+
   test('a move from the presenter view moves the stage; its own echo does not', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))
@@ -312,6 +336,8 @@ describe('windows of their own', () => {
       expect(opened[0]).toBe('http://127.0.0.1:7990/app?presenter=defence&project=%2Fwork%2Fthesis&theme=dark')
       expect(screen.getByText(/Open it in your browser/)).toBeDefined()
       expect((screen.getByLabelText('The presenter view address') as HTMLInputElement).value).toBe(opened[0] ?? '')
+      /* And a link to press: a press in this page is what a browser wants before it opens a window. */
+      expect((screen.getByRole('link', { name: 'Open' }) as HTMLAnchorElement).href).toBe(opened[0] ?? '')
 
       press('export')
       expect(opened[1]).toBe('http://127.0.0.1:7990/print?deck=defence&project=%2Fwork%2Fthesis&theme=dark')
