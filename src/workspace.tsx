@@ -483,9 +483,12 @@ export function Workspace({
               </p>
             ) : null}
           </div>
-          <div className="flex justify-center px-3 pb-1">
-            <LinkButton project={project} reading={reading} slide={slide} onLink={edit} />
-            <CiteButton project={project} selection={selection} already={cite.lit.size > 0} onCite={() => void citeSelection()} />
+          {/* A container of its own: the pane is half the window beside the editor, so the labels give way to icons by the pane's width. */}
+          <div className="@container px-3 pb-1">
+            <div className="flex flex-wrap justify-center">
+              <LinkButton project={project} reading={reading} slide={slide} onLink={edit} />
+              <CiteButton project={project} selection={selection} already={cite.lit.size > 0} onCite={() => void citeSelection()} />
+            </div>
           </div>
           {citeTrouble ? (
             <p role="status" className="text-destructive px-3 pb-1 text-center text-[11px]">
@@ -554,7 +557,7 @@ function LinkButton({
       onClick={() => section && onLink(section)}
     >
       <Link2 className="size-3" />
-      Link to the section you're reading
+      <span className="sr-only @min-[360px]:not-sr-only">Link to the section you're reading</span>
     </Button>
   )
 }
@@ -614,7 +617,7 @@ function CiteButton({
       onClick={onCite}
     >
       <Quote className="size-3" />
-      Cite the selection
+      <span className="sr-only @min-[360px]:not-sr-only">Cite the selection</span>
     </Button>
   )
 }

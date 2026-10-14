@@ -36,6 +36,8 @@ const failedLately = (src: string) => Date.now() - (failedAt.get(src) ?? -Infini
 
 /** When the door was last asked whether this page's ticket still stands. */
 let knockedAt = -Infinity
+/** How soon it is asked again when nothing answered: the server may be starting, and the next answer is the stale one. */
+const KNOCK_AGAIN_DOWN_MS = 1_500
 
 /**
  * A picture from this app's own door did not load: ask the door whether this
@@ -54,9 +56,16 @@ let knockedAt = -Infinity
 export function knock(src: string): void {
   if (!src.startsWith(`.${PATHS.asset}?`) || Date.now() - knockedAt < ASK_AGAIN_MS) return
   knockedAt = Date.now()
-  void ask(PATHS.asset, { query: { path: '' }, ticket: true }).catch(() => {
-    /* Nothing answered: `ask` has already said so to whatever draws the cover. */
-  })
+  void ask(PATHS.asset, { query: { path: '' }, ticket: true }).then(
+    (asked) => {
+      /* Nothing answered: the server is between processes. Whatever it says once it is back is the answer
+         that matters, so the next picture to fail may ask again soon instead of waiting out the quiet. */
+      if (!asked.ok && asked.kind === 'down') knockedAt = Date.now() - ASK_AGAIN_MS + KNOCK_AGAIN_DOWN_MS
+    },
+    () => {
+      /* `ask` never throws; nothing to do. */
+    },
+  )
 }
 
 /** A picture on a slide, from the project when its path is relative to it. */
