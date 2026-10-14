@@ -148,8 +148,8 @@ export function Screen({
    * project or no list there is nothing to offer, and the page says so by declaring none.
    */
   const items = useMemo(
-    () => (project && list && !cover ? headerOf({ decks: ordered.map((one) => ({ slug: one.slug, title: one.title })), open, work: open ? work : null }) : []),
-    [project, list, cover, ordered, open, work],
+    () => (project && list && !cover ? headerOf({ decks: ordered.map((one) => ({ slug: one.slug, title: one.title })), open, work: open ? work : null, surface: host.drawsHeader === true }) : []),
+    [project, list, cover, ordered, open, work, host.drawsHeader],
   )
   const itemsKey = JSON.stringify(items)
   const { header } = host
@@ -200,8 +200,8 @@ export function Screen({
   return (
     <div className="relative flex h-screen flex-col text-sm">
       {/* No strip. The page's own way to the items, only where no host draws them: nobody frames this page, or
-          no host has pressed one yet. */}
-      {host.where !== 'hosted' || !host.pressed ? <HeaderMenu items={items} onPress={press} /> : null}
+          the host says it draws none, or says nothing and has not pressed one yet. */}
+      {host.where !== 'hosted' || !(host.drawsHeader ?? host.pressed) ? <HeaderMenu items={items} onPress={press} /> : null}
       {open && state && !cover ? <SaveWord state={state} /> : null}
       <Dialog open={naming !== null} onOpenChange={(now) => !now && setNaming(null)}>
         <DialogContent className="max-w-xs gap-2 p-3">

@@ -360,7 +360,10 @@ export function Workspace({
       goTo(to)
       setTab('preview')
     } else if (item === 'present') {
-      show.start()
+      /* A host that says it draws the header went full screen itself, from its click (`surface`); one that does
+         not is asked as before, and falls back to the window. */
+      if (host.drawsHeader === true) show.begin()
+      else show.start()
       /* The keys that step a talk are heard in this frame, and the press was made in the host's page — whose
          menu, closing, puts the keyboard back on its own trigger a moment later. So the keyboard is taken now,
          and again once that has happened. */
@@ -369,8 +372,10 @@ export function Workspace({
         stage.current?.focus({ preventScroll: true })
       }
       take()
-      setTimeout(take, 80)
-      setTimeout(take, 350)
+      if (host.drawsHeader !== true) {
+        setTimeout(take, 80)
+        setTimeout(take, 350)
+      }
     } else if (item === 'presenter') open('The presenter view', './app', { presenter: slug })
     else if (item === 'export') open('The print view', './print', { deck: slug })
     else return undefined

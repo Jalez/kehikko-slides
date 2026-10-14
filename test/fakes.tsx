@@ -48,6 +48,7 @@ export function host(over: Partial<Host> = {}): Host {
     },
     presses: wire.presses,
     pressed: false,
+    drawsHeader: null,
     where: 'hosted',
     project: 'Thesis',
     projectPath: '/work/thesis',
