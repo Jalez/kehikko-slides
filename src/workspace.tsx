@@ -372,8 +372,10 @@ export function Workspace({
         stage.current?.focus({ preventScroll: true })
       }
       take()
-      setTimeout(take, 80)
-      setTimeout(take, 350)
+      if (host.drawsHeader !== true) {
+        setTimeout(take, 80)
+        setTimeout(take, 350)
+      }
     } else if (item === 'presenter') open('The presenter view', './app', { presenter: slug })
     else if (item === 'export') open('The print view', './print', { deck: slug })
     else return undefined
