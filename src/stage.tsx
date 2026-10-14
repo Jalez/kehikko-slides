@@ -37,8 +37,11 @@ export function usePresenting({
   const [since, setSince] = useState<number | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const told = useRef(false)
+  /* The host made the frame full screen from its own press (`surface`): nothing here asked for it, and it ends by the frame's size. */
+  const byHost = useRef(false)
 
   const leave = useCallback(() => {
+    byHost.current = false
     if (typeof document !== 'undefined' && document.fullscreenElement) void document.exitFullscreen?.().catch(() => {})
     setPresenting(null)
     setBlank(false)
@@ -46,7 +49,33 @@ export function usePresenting({
     setNote(null)
   }, [])
 
+  /* Presenting, with the screen already given: the host's header made this frame full screen from its own click
+     (`surface: 'fullscreen'`) before it relayed the press. Nothing is asked of the browser here. */
+  const begin = useCallback(() => {
+    byHost.current = true
+    flushSync(() => {
+      setPresenting('fullscreen')
+      setBlank(false)
+      setSince(Date.now())
+    })
+  }, [])
+
+  /* The host's full screen ends in the host (Esc), and says nothing: the frame is smaller again. */
+  useEffect(() => {
+    if (presenting !== 'fullscreen' || !byHost.current) return
+    const area = () => window.innerWidth * window.innerHeight
+    let peak = area()
+    const resized = () => {
+      const now = area()
+      if (now > peak) peak = now
+      else if (now < peak * 0.9) leave()
+    }
+    window.addEventListener('resize', resized)
+    return () => window.removeEventListener('resize', resized)
+  }, [presenting, leave])
+
   const start = useCallback(() => {
+    byHost.current = false
     const fallBack = () => {
       setPresenting('window')
       /* Said once per screen: after that the person knows. */
@@ -90,7 +119,7 @@ export function usePresenting({
 
   /* Leaving full screen by the browser's own means (Esc, a gesture) ends the talk. */
   useEffect(() => {
-    if (presenting !== 'fullscreen') return
+    if (presenting !== 'fullscreen' || byHost.current) return
     const changed = () => {
       if (!document.fullscreenElement) leave()
     }
@@ -125,7 +154,7 @@ export function usePresenting({
     return () => clearTimeout(timer)
   }, [note])
 
-  return { presenting, blank, setBlank, since, note, start, leave, full }
+  return { presenting, blank, setBlank, since, note, start, begin, leave, full }
 }
 
 /** The stage: always mounted, so it can be asked to go full screen within the press that asked. */

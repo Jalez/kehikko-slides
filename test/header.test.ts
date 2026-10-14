@@ -46,6 +46,17 @@ describe('what the page declares for the header', () => {
     expect(items.find((one) => one.id === 'deck-remove')).toMatchObject({ confirm: true })
   })
 
+  test('Present asks the host for full screen only when the host said it draws the header', () => {
+    const present = (surface?: boolean) => headerOf({ ...base, surface }).find((one) => one.id === 'present')
+    expect(present(true)).toMatchObject({ kind: 'run', surface: 'fullscreen' })
+    expect(present(false)).not.toHaveProperty('surface')
+    expect(present(undefined)).not.toHaveProperty('surface')
+    /* The others (pop-ups) are not covered by a surface. */
+    const items = headerOf({ ...base, surface: true })
+    expect(items.filter((one) => 'surface' in one).map((one) => one.id)).toEqual(['present'])
+    expect(headerItemsSchema.safeParse(items).success).toBe(true)
+  })
+
   test('while a talk is given, what would take the screen from it cannot be pressed, and says why', () => {
     const items = headerOf({ ...base, work: { ...work, presenting: true } })
     for (const id of ['present', 'history', 'deck-new', 'deck-rename', 'deck-remove']) {

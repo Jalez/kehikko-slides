@@ -273,6 +273,58 @@ describe('presenting', () => {
     }
   })
 
+  test('a host that draws the header made the frame full screen itself: nothing is asked here, no notice, and a smaller frame ends the talk', async () => {
+    const proto = HTMLElement.prototype as unknown as { requestFullscreen?: () => Promise<void> }
+    let asked = 0
+    proto.requestFullscreen = function () {
+      asked += 1
+      return Promise.reject(new Error('a relayed press has no activation'))
+    }
+    const size = (w: number, h: number) => {
+      Object.assign(window, { innerWidth: w, innerHeight: h })
+      act(() => {
+        window.dispatchEvent(new Event('resize'))
+      })
+    }
+    const was = [window.innerWidth, window.innerHeight] as const
+    try {
+      drawFollowing(LINKED, { drawsHeader: true })
+      await waitFor(() => expect(editor().value).toBe(LINKED))
+      size(800, 600)
+      press('present')
+      expect(asked).toBe(0)
+      expect(stage().getAttribute('data-presenting')).toBe('fullscreen')
+      expect(within(stage()).queryByRole('status')).toBeNull()
+      /* The host's full screen arrives as a bigger frame, and leaves as the smaller one. */
+      size(1600, 900)
+      expect(stage().getAttribute('data-presenting')).toBe('fullscreen')
+      size(800, 600)
+      expect(stage().getAttribute('data-presenting')).toBeNull()
+      expect(asked).toBe(0)
+    } finally {
+      delete proto.requestFullscreen
+      size(was[0], was[1])
+    }
+  })
+
+  test('a host that says nothing is asked as before: refused, the window, and a press on the slide', async () => {
+    const proto = HTMLElement.prototype as unknown as { requestFullscreen?: () => Promise<void> }
+    let asked = 0
+    proto.requestFullscreen = function () {
+      asked += 1
+      return Promise.reject(new Error('no activation'))
+    }
+    try {
+      drawFollowing(LINKED, { drawsHeader: null })
+      await waitFor(() => expect(editor().value).toBe(LINKED))
+      press('present')
+      await waitFor(() => expect(stage().getAttribute('data-presenting')).toBe('window'))
+      expect(asked).toBe(1)
+    } finally {
+      delete proto.requestFullscreen
+    }
+  })
+
   test('a move from the presenter view moves the stage; its own echo does not', async () => {
     const run = drawFollowing()
     await waitFor(() => expect(editor().value).toBe(LINKED))

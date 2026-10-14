@@ -360,7 +360,10 @@ export function Workspace({
       goTo(to)
       setTab('preview')
     } else if (item === 'present') {
-      show.start()
+      /* A host that says it draws the header went full screen itself, from its click (`surface`); one that does
+         not is asked as before, and falls back to the window. */
+      if (host.drawsHeader === true) show.begin()
+      else show.start()
       /* The keys that step a talk are heard in this frame, and the press was made in the host's page — whose
          menu, closing, puts the keyboard back on its own trigger a moment later. So the keyboard is taken now,
          and again once that has happened. */

@@ -375,4 +375,31 @@ describe('the header the host draws', () => {
     await waitFor(() => expect(item('present')).toBeDefined())
     expect(screen.queryByTestId('header-menu')).toBeNull()
   })
+
+  test('the page’s own menu follows what the host says it draws: true never, false always, nothing until a press', async () => {
+    const fake = fakeDecks()
+    for (const [drawsHeader, pressed, shown] of [
+      [true, false, false],
+      [true, true, false],
+      [false, false, true],
+      [false, true, true],
+      [null, false, true],
+      [null, true, false],
+    ] as const) {
+      const view = render(<Screen host={host({ drawsHeader, pressed })} decks={fake.decks} editor={FakeEditor} saveDelay={20} />)
+      await waitFor(() => expect(item('present')).toBeDefined())
+      expect(screen.queryByTestId('header-menu') !== null).toBe(shown)
+      view.unmount()
+    }
+  })
+
+  test('Present declares surface: fullscreen to a host that says it draws the header, and to no other', async () => {
+    const fake = fakeDecks()
+    for (const [drawsHeader, surface] of [[true, 'fullscreen'], [false, undefined], [null, undefined]] as const) {
+      const view = render(<Screen host={host({ drawsHeader })} decks={fake.decks} editor={FakeEditor} saveDelay={20} />)
+      await waitFor(() => expect(item('present')).toBeDefined())
+      expect((item('present') as { surface?: string }).surface).toBe(surface)
+      view.unmount()
+    }
+  })
 })

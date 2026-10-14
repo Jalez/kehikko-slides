@@ -35,6 +35,8 @@ export interface HeaderState {
   open: string | null
   /** Null while no deck is open, or its text has not arrived. */
   work: Work | null
+  /** The host draws this header and goes full screen for a run that asks (`drawsHeader === true`): Present says so. */
+  surface?: boolean
 }
 
 /** A label no longer than a label may be, cut with an ellipsis. Never empty. */
@@ -98,7 +100,8 @@ export function headerOf(state: HeaderState): HeaderItemInput[] {
   }
 
   if (work) {
-    items.push({ kind: 'run', id: 'present', label: 'Present', icon: 'play', disabled: talking })
+    /* The host makes the frame full screen from its own click, which a relayed press could not (a host that says nothing is not told). */
+    items.push({ kind: 'run', id: 'present', label: 'Present', icon: 'play', disabled: talking, ...(state.surface ? { surface: 'fullscreen' as const } : {}) })
     items.push({ kind: 'run', id: 'presenter', label: 'Presenter view', icon: 'monitor-play' })
     items.push({ kind: 'run', id: 'export', label: 'Export PDF', icon: 'file-down' })
     items.push({ kind: 'run', id: 'history', label: 'History', icon: 'history', disabled: talking })
