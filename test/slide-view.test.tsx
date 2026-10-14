@@ -123,6 +123,48 @@ describe('SlideView', () => {
     }
   })
 
+  test('a picture refused while the server was still starting asks again soon, and learns the page is stale', async () => {
+    const { resetServerStanding, serverStanding } = await import('kehikot-module-protocol/client')
+    const realFetch = globalThis.fetch
+    const realNow = Date.now
+    let clock = realNow() + 3_600_000
+    Date.now = () => clock
+    let up = false
+    const asked: string[] = []
+    globalThis.fetch = (async (url: string) => {
+      asked.push(String(url))
+      if (!up) throw new TypeError('Load failed')
+      return Response.json({ ok: false, error: 'No.', refused: 'ticket' }, { status: 403 })
+    }) as unknown as typeof fetch
+    resetServerStanding()
+    const wait = () => new Promise((resolve) => setTimeout(resolve, 20))
+    const failing = (name: string) => {
+      const view = render(
+        <PictureProject.Provider value="/work/thesis">
+          <SlideView slide={parseSlide(`![x](figures/${name}.png)`)} />
+        </PictureProject.Provider>,
+      )
+      fireEvent.error(view.container.querySelector('img')!)
+    }
+    try {
+      failing('during-restart')
+      await wait()
+      expect(asked).toHaveLength(1)
+      expect(serverStanding()).toBe('down')
+      /* Back up, a couple of seconds on: a picture that fails now asks, and is told the ticket is old. */
+      up = true
+      clock += 2_000
+      failing('after-restart')
+      await wait()
+      expect(asked).toHaveLength(2)
+      expect(serverStanding()).toBe('stale')
+    } finally {
+      Date.now = realNow
+      globalThis.fetch = realFetch
+      resetServerStanding()
+    }
+  })
+
   test('a quote slide draws a blockquote', () => {
     const view = draw('<!-- layout: quote -->\n> Simplicity is prerequisite for reliability.\n\n— Dijkstra')
     expect(view.querySelector('.slide-quote blockquote')?.textContent).toContain('Simplicity')
