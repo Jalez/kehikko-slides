@@ -9,7 +9,7 @@ import { MANIFEST } from '../manifest.ts'
 import { Screen } from '../src/app.tsx'
 import { anchorsIn, narrowDeck, nearestShown, positionSaid, stepShown } from '../src/focus.ts'
 import type { Host } from '../src/wire/use-kehikot.ts'
-import { FakeEditor, caretAt, editor, fakeDecks, host, jumped, pause, preview, type } from './fakes.tsx'
+import { caretAt, editor, fakeDecks, FakeEditor, following, host, jumped, pause, press, preview, type } from './fakes.tsx'
 
 /**
  * The parts focus in a deck: it NARROWS to the slides of the ticked parts, as
@@ -313,7 +313,7 @@ describe('the deck as the ticks change', () => {
     const fake = fakeDecks({}, { text: DECK })
     render(at(fake, ['methods']))
     await waitFor(() => expect(onScreen()).toBe('How'))
-    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    press('present')
     const stage = screen.getByTestId('stage')
     expect(stage.getAttribute('data-presenting')).not.toBeNull()
     expect(within(stage).getByRole('heading').textContent).toBe('How')
@@ -336,7 +336,7 @@ describe('the deck as the ticks change', () => {
     const view = render(at(fake, ['methods']))
     await waitFor(() => expect(onScreen()).toBe('How'))
     view.rerender(at(fake, ['methods'], { passage: reading }))
-    await waitFor(() => expect(screen.getByTestId('following').getAttribute('aria-label')).toBe('Slide 2, for Introduction, is not among the slides shown'))
+    await waitFor(() => expect(following().getAttribute('aria-label')).toBe('Slide 2 is not among those shown: Introduction'))
     expect(onScreen()).toBe('How')
     expect(strip()).toEqual(['slide 3', 'slide 4'])
     /* With nothing picked the same reading is followed, as it always was. */

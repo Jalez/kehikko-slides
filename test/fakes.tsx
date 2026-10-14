@@ -5,12 +5,49 @@ import type { DeckSummary, HistoryEntry, PointerState, PresentState, Version, Wa
 import { Screen } from '../src/app.tsx'
 import type { EditorProps } from '../src/editor/deck-editor.tsx'
 import type { Decks, SaveResult } from '../src/wire/decks.ts'
+import type { HeaderItemInput } from 'kehikot-module-protocol'
+
 import type { Host } from '../src/wire/use-kehikot.ts'
 
 /* The fakes the screen tests share: a host, an in-memory store, a textarea for CodeMirror. */
 
+/**
+ * The header as the page last declared it to its host, and where the page put what takes a press.
+ * A new host starts both over. `press` is a press as the host relays one: an item's id, and the
+ * option's id, the state wanted, or nothing.
+ */
+export const wire: { items: HeaderItemInput[]; declared: number; presses: Host['presses'] } = { items: [], declared: 0, presses: { current: null } }
+export const item = <K extends HeaderItemInput['kind']>(id: string) => wire.items.find((one) => one.id === id) as Extract<HeaderItemInput, { kind: K }> | undefined
+export const press = (id: string, value?: string | boolean) => {
+  let said = 'no page takes presses' as string | boolean | void
+  act(() => {
+    said = wire.presses.current ? wire.presses.current({ item: id, ...(value === undefined ? {} : { value }) }) : said
+  })
+  return said
+}
+
+/** The following toggle as it is declared: its words while it is on, and whether it is. */
+export const following = () => {
+  const it = item<'toggle'>('following')
+  const words = !it ? '' : it.checked ? it.label : 'Not following'
+  return { textContent: words, getAttribute: (name: string) => (name === 'aria-pressed' ? String(it?.checked) : name === 'aria-label' ? words : null) }
+}
+/* Following is on until somebody turns it off, which is also what is true before the first declaration lands. */
+export const toggleFollowing = () => press('following', !(item<'toggle'>('following')?.checked ?? true))
+/** Which pane a page too narrow for both has in front. */
+export const pane = () => document.querySelector('[data-pane]')?.getAttribute('data-pane') ?? null
+
 export function host(over: Partial<Host> = {}): Host {
+  wire.items = []
+  wire.declared = 0
+  wire.presses = { current: null }
   return {
+    header: (items) => {
+      wire.items = items
+      wire.declared += 1
+    },
+    presses: wire.presses,
+    pressed: false,
     where: 'hosted',
     project: 'Thesis',
     projectPath: '/work/thesis',

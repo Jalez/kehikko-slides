@@ -107,6 +107,8 @@ function tools() {
   return [
     {
       name: 'list_decks',
+      /* Reads the list and nothing else. */
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: 'The slide decks in a project, most recently changed first. Give epic to see only that epic’s decks.',
       inputSchema: {
         type: 'object',
@@ -116,6 +118,8 @@ function tools() {
     },
     {
       name: 'read_deck',
+      /* Reads one file. */
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description:
         'One deck: a numbered list of its slides (layout, headline, linked paper section, whether it has notes), '
         + 'each slide\'s citations with the lines of the file they were found on and whether they still hold, '
@@ -126,6 +130,8 @@ function tools() {
     },
     {
       name: 'create_deck',
+      /* Writes a new file and never over one: a title already taken is given another slug. */
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description:
         'Start a deck with one title slide. Its slug is made from the title. To draft a talk from a paper: call the '
         + 'paper module’s list_sections and read_paper, create the deck, write it with write_deck (one or more slides '
@@ -143,6 +149,8 @@ function tools() {
     },
     {
       name: 'write_deck',
+      /* Replaces the deck's whole text. What it replaced is kept in the deck's history, with Undo, but it IS gone from the file. */
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       description:
         `Replace a whole deck's Markdown. ${FORMAT} The previous text is kept, so the person can undo your write. `
         + 'Use edit_slide to change one slide.',
@@ -154,6 +162,8 @@ function tools() {
     },
     {
       name: 'edit_slide',
+      /* Replaces one slide's text; the history keeps what it was. */
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       description:
         'Replace one slide, leaving every other byte of the deck as it was. markdown is that one slide: its '
         + 'directive comment (if any), its body, and its notes after a Notes: line — but no --- line; use write_deck '
@@ -173,6 +183,8 @@ function tools() {
     },
     {
       name: 'link_slide',
+      /* Sets one directive on one slide. Nothing of the slide's own text is removed. */
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description:
         'Link a slide to a section of the paper, so the slides follow the paper as it is read and the paper turns '
         + 'to that section when the slide is shown. path and title are a section exactly as the paper module’s '
@@ -192,6 +204,8 @@ function tools() {
     },
     {
       name: 'cite_slide',
+      /* Adds a source and its marker. Nothing is removed. */
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description:
         'Say exactly which words of a file a claim on a slide rests on. Adds [^n] after the slide words you name in '
         + 'at (or nowhere, citing the slide as a whole, when at is left out) and a source line under the slide\'s '

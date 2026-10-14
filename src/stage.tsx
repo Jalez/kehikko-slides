@@ -13,7 +13,7 @@ import { step, talkKey } from './talk.ts'
  */
 export type Presenting = 'fullscreen' | 'window' | null
 
-export const FALLBACK_NOTE = 'Full screen is not available here, so the slides fill the window instead. Esc leaves.'
+export const FALLBACK_NOTE = 'The slides fill this window. Press a slide for full screen; Esc leaves.'
 
 /**
  * Presenting the open deck: entering and leaving full screen, the keys, and
@@ -70,6 +70,24 @@ export function usePresenting({
     }
   }, [stage])
 
+  /* Filling the window, and pressed: the press is a gesture in this page, which is what a browser asks for before
+     it gives an element the whole screen. Present asked from the host's menu has none — the press was in the
+     host's page — so the talk starts in the window and one press on a slide takes the screen. */
+  const full = useCallback(() => {
+    const element = stage.current
+    if (presenting !== 'window' || !element || typeof element.requestFullscreen !== 'function') return
+    try {
+      Promise.resolve(element.requestFullscreen())
+        .then(() => {
+          setPresenting('fullscreen')
+          setNote(null)
+        })
+        .catch(() => {})
+    } catch {
+      /* Not here: the window it is. */
+    }
+  }, [presenting, stage])
+
   /* Leaving full screen by the browser's own means (Esc, a gesture) ends the talk. */
   useEffect(() => {
     if (presenting !== 'fullscreen') return
@@ -107,7 +125,7 @@ export function usePresenting({
     return () => clearTimeout(timer)
   }, [note])
 
-  return { presenting, blank, setBlank, since, note, start, leave }
+  return { presenting, blank, setBlank, since, note, start, leave, full }
 }
 
 /** The stage: always mounted, so it can be asked to go full screen within the press that asked. */
@@ -118,7 +136,10 @@ export function Stage({
   aspect,
   blank,
   note,
+  onPress,
 }: {
+  /** A press on the stage while presenting: full screen is asked for again, with a gesture this time. */
+  onPress?(): void
   stage: RefObject<HTMLDivElement | null>
   presenting: Presenting
   slide: Slide | undefined
@@ -130,10 +151,13 @@ export function Stage({
     <div
       ref={stage}
       data-testid="stage"
+      /* Focusable, so the frame can be given the keyboard when a talk is started from outside it. */
+      tabIndex={-1}
       data-presenting={presenting ?? undefined}
       role={presenting ? 'dialog' : undefined}
       aria-label={presenting ? 'presenting' : undefined}
-      className={presenting ? 'fixed inset-0 z-50 flex bg-black' : 'hidden'}
+      className={presenting ? 'fixed inset-0 z-50 flex bg-black outline-none' : 'hidden'}
+      onClick={presenting === 'window' ? onPress : undefined}
     >
       {presenting && slide && !blank ? <SlideView slide={slide} aspect={aspect} /> : null}
       {presenting && note ? (

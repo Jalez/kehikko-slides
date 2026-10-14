@@ -11,7 +11,7 @@ import { Screen } from '../src/app.tsx'
 import { deckPath, slidePointed, type PassageLike } from '../src/follow.ts'
 import type { Host } from '../src/wire/use-kehikot.ts'
 import { history, readDeck } from '../store.ts'
-import { FakeEditor, editor, fakeDecks, host, pause, preview } from './fakes.tsx'
+import { editor, fakeDecks, FakeEditor, host, pane, pause, press, preview } from './fakes.tsx'
 import { answer } from './now.ts'
 
 /**
@@ -312,8 +312,9 @@ describe('show_slide on the MCP door', () => {
     expect(one.inputSchema.required).toEqual(['project', 'deck', 'index'])
     expect(one.outputSchema?.properties.outcome.enum).toEqual(['shown', 'unseen', 'declined'])
     expect(one.outputSchema?.required).toEqual(['deck', 'index', 'slide', 'slides', 'outcome', 'pages', 'open', 'outside', 'hidden', 'stale', 'presenting', 'silent', 'why'])
-    /* No tool that writes a deck claims to only read. */
-    for (const each of listed) if (each.name !== 'show_slide') expect((each.annotations as { readOnlyHint?: boolean } | undefined)?.readOnlyHint).not.toBe(true)
+    /* No tool that writes a deck claims to only read: the two that list and read do, and no other. */
+    const READS = ['list_decks', 'read_deck', 'show_slide']
+    for (const each of listed) expect((each.annotations as { readOnlyHint?: boolean } | undefined)?.readOnlyHint).toBe(READS.includes(each.name))
   })
 
   test('the pointer door refuses a deck name that is not one', () => {
@@ -423,16 +424,15 @@ describe('the page, pointed at a slide', () => {
   test('a page too narrow for both panes turns to the one the slide is drawn in', async () => {
     const run = draw()
     await waitFor(() => expect(editor().value).toBe(DECK))
-    const tab = (name: string) => screen.getByRole('tab', { name }).getAttribute('aria-selected')
-    expect(tab('Edit')).toBe('true')
+    expect(pane()).toBe('edit')
     run.fake.point(2, 100)
-    await waitFor(() => expect(tab('Preview')).toBe('true'))
+    await waitFor(() => expect(pane()).toBe('preview'))
     expect(heading()).toBe('Results')
     /* The person takes the Markdown back, and the next pointing shows the slide again. */
-    fireEvent.click(screen.getByRole('tab', { name: 'Edit' }))
-    expect(tab('Edit')).toBe('true')
+    press('mode', 'edit')
+    expect(pane()).toBe('edit')
     run.fake.point(1, 101)
-    await waitFor(() => expect(tab('Preview')).toBe('true'))
+    await waitFor(() => expect(pane()).toBe('preview'))
   })
 
   test('what the door held when the page arrived is not gone to', async () => {
@@ -461,7 +461,7 @@ describe('the page, pointed at a slide', () => {
     const told = () => run.fake.of('followPointer').at(-1)!.args[2]
     await waitFor(() => expect(editor().value).toBe(DECK))
     expect(told()).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Present' }))
+    press('present')
     await waitFor(() => expect(told()).toBe(true))
     run.fake.point(2, 100)
     run.read(pointing({ page: 2 }))

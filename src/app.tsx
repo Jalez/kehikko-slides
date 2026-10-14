@@ -4,13 +4,16 @@ import { Cover, coverFor, useServerStanding, type CoverState } from 'kehikot-mod
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NameForm } from '@/components/menu'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Hint } from '@/controls'
 import { DeckEditor, type Editor } from '@/editor/deck-editor'
+import { headerOf, type Work } from '@/header'
+import { HeaderMenu } from '@/header-menu'
 import { HistoryDialog } from '@/history'
 import { PictureProject } from '@/slides/markdown'
-import { Switcher, type Item } from '@/switcher'
 import { decks as realDecks, type Decks } from '@/wire/decks'
-import { useKehikot, type Host } from '@/wire/use-kehikot'
+import { useKehikot, type Host, type Press } from '@/wire/use-kehikot'
 import { Workspace } from '@/workspace'
 
 import type { DeckSummary, WatchEvent } from '../deck/api.ts'
@@ -21,9 +24,16 @@ export function App() {
 }
 
 /**
- * The slides screen: a header strip (deck switcher, save state, the open
- * deck's controls — following the paper, Present, PDF — and History) over the open deck's workspace. Rendered from a plain `Host` and a
- * `Decks` client, so a test draws it with fakes (see test/screen.test.tsx).
+ * The slides screen: the open deck's workspace, and nothing over it.
+ *
+ * It used to have a strip of its own — the deck switcher, the save word, following, Present,
+ * Presenter view, Export PDF, History — and, when narrow, a second row of tabs. All of that is
+ * declared to the host (`header.ts`) and drawn in the container's own header as View, Go and Run;
+ * a page no host draws that for has the same items behind one small control in its corner
+ * (`header-menu.tsx`). What a menu cannot hold is asked in a dialog: a new deck's name, a new name
+ * for this one. Whether the deck is saved is a dot in the corner, and a word where there is room.
+ *
+ * Rendered from a plain `Host` and a `Decks` client, so a test draws it with fakes.
  */
 export function Screen({
   host,
@@ -47,9 +57,12 @@ export function Screen({
   const [watched, setWatched] = useState<WatchEvent | null>(null)
   /* Bumped to remount the workspace with what is on disk (after an undo). */
   const [generation, setGeneration] = useState(0)
-  /* Where the workspace draws the open deck's controls (see Workspace). */
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [controls, setControls] = useState<HTMLSpanElement | null>(null)
+  /* The one name being asked for, if any: a new deck's, or a new one for the open deck. */
+  const [naming, setNaming] = useState<'new' | 'rename' | null>(null)
+  /* What the open deck's own header items are made of (see Workspace), and what takes a press on one. */
+  const [work, setWork] = useState<Work | null>(null)
+  const act = useRef<Press | null>(null)
 
   const refresh = useCallback(async () => {
     if (!project) return
@@ -117,42 +130,99 @@ export function Screen({
   const ready: CoverState | null = coverFor({ where: host.where, projectPath: host.projectPath, server })
   const cover = ready === 'down' && list?.length ? null : (ready ?? (!list ? 'loading' : null))
 
-  const items: Item[] = ordered.map((one) => ({ id: one.slug, name: one.title }))
+  const here = ordered.find((one) => one.slug === open) ?? null
+  const retitle = async (title: string) => {
+    if (!project || !here) return false
+    try {
+      await decks.retitle(project, here.slug, title)
+      await refresh()
+      return true
+    } catch (caught) {
+      setFailed(said(caught))
+      return false
+    }
+  }
+
+  /*
+   * The header: declared whole, and again only when it is a different list. While there is no
+   * project or no list there is nothing to offer, and the page says so by declaring none.
+   */
+  const items = useMemo(
+    () => (project && list && !cover ? headerOf({ decks: ordered.map((one) => ({ slug: one.slug, title: one.title })), open, work: open ? work : null }) : []),
+    [project, list, cover, ordered, open, work],
+  )
+  const itemsKey = JSON.stringify(items)
+  const { header } = host
+  useEffect(() => {
+    header(items)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [header, itemsKey])
+  const press: Press = (pressing) => {
+    const { item, value } = pressing
+    if (item === 'deck') {
+      const to = typeof value === 'string' && value.startsWith('d') ? ordered[Number(value.slice(1))] : undefined
+      if (!to) return 'That deck is no longer one of this project’s.'
+      setOpen(to.slug)
+    } else if (item === 'history') setHistoryOpen(true)
+    else if (item === 'deck-new') setNaming('new')
+    else if (item === 'deck-rename') setNaming('rename')
+    else if (item === 'deck-remove') {
+      if (!project || !here) return 'No deck is open.'
+      void decks
+        .remove(project, here.slug)
+        .then(refresh)
+        .catch((caught: unknown) => setFailed(said(caught)))
+    } else return act.current?.(pressing) ?? 'That is not something these slides have.'
+    return true
+  }
+  host.presses.current = press
+  const { presses } = host
+  useEffect(
+    () => () => {
+      presses.current = null
+    },
+    [presses],
+  )
+
+  /* F2 renames the open deck, as it did on its row in the deck menu — from anywhere in the page now. */
+  const canName = !!project && !!here && !work?.presenting
+  useEffect(() => {
+    if (!canName) return
+    const down = (event: KeyboardEvent) => {
+      if (event.key !== 'F2' || event.metaKey || event.ctrlKey || event.altKey) return
+      event.preventDefault()
+      setNaming('rename')
+    }
+    window.addEventListener('keydown', down)
+    return () => window.removeEventListener('keydown', down)
+  }, [canName])
 
   return (
-    <div className="flex h-screen flex-col text-sm">
-      <header className="@container flex min-h-9 shrink-0 flex-nowrap items-center gap-x-2 border-b px-2 py-1">
-        <span className="shrink-0 text-xs font-medium">Slides</span>
-        {project && list ? (
-          <Switcher
-            noun="deck"
-            items={items}
-            current={open}
-            onPick={setOpen}
-            onRename={async (slug, title) => {
-              try {
-                await decks.retitle(project, slug, title)
-                await refresh()
-                return true
-              } catch (caught) {
-                setFailed(said(caught))
-                return false
-              }
-            }}
-            onRemove={(slug) => {
-              void decks
-                .remove(project, slug)
-                .then(refresh)
-                .catch((caught: unknown) => setFailed(said(caught)))
-            }}
-            onCreate={create}
-          />
-        ) : null}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {open && state ? <SaveWord state={state} /> : null}
-          <span ref={setControls} className="contents" />
-        </div>
-      </header>
+    <div className="relative flex h-screen flex-col text-sm">
+      {/* No strip. The page's own way to the items, only where no host draws them: nobody frames this page, or
+          no host has pressed one yet. */}
+      {host.where !== 'hosted' || !host.pressed ? <HeaderMenu items={items} onPress={press} /> : null}
+      {open && state && !cover ? <SaveWord state={state} /> : null}
+      <Dialog open={naming !== null} onOpenChange={(now) => !now && setNaming(null)}>
+        <DialogContent className="max-w-xs gap-2 p-3">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{naming === 'rename' ? 'Rename this deck' : 'New deck'}</DialogTitle>
+            <DialogDescription className="text-xs">
+              {naming === 'rename' ? 'Its file keeps its name; only the title changes.' : 'A deck is one Markdown file in this project.'}
+            </DialogDescription>
+          </DialogHeader>
+          {naming ? (
+            <NameForm
+              heading=""
+              initial={naming === 'rename' ? (here?.title ?? '') : ''}
+              label="deck name"
+              maxLength={80}
+              onSave={(name) => (naming === 'rename' ? retitle(name) : create(name))}
+              onDone={() => setNaming(null)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       {project && open ? (
         <HistoryDialog
           open={historyOpen}
@@ -186,8 +256,8 @@ export function Screen({
               theme={host.theme}
               saveDelay={saveDelay}
               publishDelay={publishDelay}
-              header={controls}
-              onHistory={() => setHistoryOpen(true)}
+              onWork={setWork}
+              act={act}
               onState={setState}
             />
           </PictureProject.Provider>
@@ -217,25 +287,29 @@ const WORDS: Record<SaveState, string> = {
   failed: 'not saved',
 }
 
+/**
+ * Whether the deck is saved, laid over the bottom right corner where it takes no row: a dot, with the
+ * word as its tooltip, and the word itself where the page is wide enough to have room beside the
+ * slide's number.
+ */
 function SaveWord({ state }: { state: SaveState }) {
   const bad = state === 'conflict' || state === 'failed'
   return (
-    <>
-      {/* Narrow: a dot with the word as its tooltip; wide: the word itself. */}
+    <span className="@container pointer-events-none absolute right-1.5 bottom-1.5 z-20 flex w-full items-center justify-end">
       <Hint text={WORDS[state]}>
         <span
           role="img"
           aria-label={WORDS[state]}
-          className={`mx-1 size-2 shrink-0 rounded-full @min-[520px]:hidden ${bad ? 'bg-destructive' : state === 'saved' ? 'bg-muted-foreground/50' : 'bg-foreground/70'}`}
+          className={`pointer-events-auto size-2 shrink-0 rounded-full @min-[520px]:hidden ${bad ? 'bg-destructive' : state === 'saved' ? 'bg-muted-foreground/50' : 'bg-foreground/70'}`}
         />
       </Hint>
       <span
         data-testid="save-state"
-        className={`hidden px-1 text-[11px] @min-[520px]:inline ${bad ? 'text-destructive' : 'text-muted-foreground'}`}
+        className={`bg-background/80 hidden rounded px-1 text-[11px] @min-[520px]:inline ${bad ? 'text-destructive' : 'text-muted-foreground'}`}
       >
         {WORDS[state]}
       </span>
-    </>
+    </span>
   )
 }
 
