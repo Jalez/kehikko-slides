@@ -52,6 +52,7 @@ export function host(over: Partial<Host> = {}): Host {
     where: 'hosted',
     project: 'Thesis',
     projectPath: '/work/thesis',
+    projectId: null,
     epic: 'write-chapter-two',
     theme: 'dark',
     passage: null,
@@ -170,6 +171,10 @@ export function fakeDecks(
     async source(project, path, from, to) {
       record('source', project, path, from, to)
       return ''
+    },
+    async where(project, projectId) {
+      record('where', project, projectId)
+      return { project }
     },
     ...over,
   }

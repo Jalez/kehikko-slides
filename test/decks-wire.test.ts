@@ -28,9 +28,9 @@ afterEach(() => {
 describe('the decks wire', () => {
   test('a write carries the page’s ticket, which the doors accept', async () => {
     let carried = ''
-    reply = (_url, init) => {
+    reply = async (_url, init) => {
       carried = (init.headers as Record<string, string>)['x-module-ticket'] ?? ''
-      const said = answer('POST', '/api/decks', new URLSearchParams(), JSON.parse(String(init.body)), carried)
+      const said = await answer('POST', '/api/decks', new URLSearchParams(), JSON.parse(String(init.body)), carried)
       return json(said?.status ?? 500, said?.body)
     }
     /* No such project: the doors refuse in their own words, and it is not the ticket they refuse. */
@@ -41,10 +41,10 @@ describe('the decks wire', () => {
 
   test('a read carries the page’s ticket too, and the doors answer it', async () => {
     let carried = ''
-    reply = (url, init) => {
+    reply = async (url, init) => {
       carried = (init.headers as Record<string, string>)['x-module-ticket'] ?? ''
       const at = new URL(url, 'http://localhost')
-      const said = answer(String(init.method), at.pathname, at.searchParams, null, carried)
+      const said = await answer(String(init.method), at.pathname, at.searchParams, null, carried)
       return json(said?.status ?? 500, said?.body)
     }
     await expect(decks.source('/nowhere/at/all', 'a.tex', 0, 1)).rejects.toThrow()
@@ -55,8 +55,8 @@ describe('the decks wire', () => {
   })
 
   test('a page older than its server: the refusal is marked, and the wire says so', async () => {
-    reply = (_url, init) => {
-      const said = answer('POST', '/api/decks', new URLSearchParams(), JSON.parse(String(init.body)), 'a-ticket-from-before-the-restart')
+    reply = async (_url, init) => {
+      const said = await answer('POST', '/api/decks', new URLSearchParams(), JSON.parse(String(init.body)), 'a-ticket-from-before-the-restart')
       return json(said?.status ?? 500, said?.body)
     }
     const failed = await decks.create('/p', 'A deck').catch((caught: unknown) => caught)

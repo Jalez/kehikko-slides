@@ -28,7 +28,8 @@ describe('watching decks', () => {
     const open = stream('GET', '/api/watch', new URLSearchParams({ project: dir }), (e) => seen.push(e as DeckChange))
     if (!open || !('close' in open)) throw new Error('the watch did not open')
 
-    const reply = answer('PUT', '/api/deck', new URLSearchParams(), { project: dir, slug: 'deck', text: '# new\n' }, TICKET)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const reply = await answer('PUT', '/api/deck', new URLSearchParams(), { project: dir, slug: 'deck', text: '# new\n' }, TICKET)
     await settle()
     expect(seen).toEqual([{ slug: 'deck', version: (reply?.body as { version: string }).version }])
     open.close()

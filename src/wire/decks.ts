@@ -56,6 +56,13 @@ export interface Decks {
   citations(project: string, slug: string): Promise<CitationView[][]>
   /** The exact words of a project file between two byte offsets. */
   source(project: string, path: string, from: number, to: number): Promise<string>
+  /**
+   * Where a project is now: the folder the host has it in, which is not `project` when that folder was renamed
+   * or moved since. `projectId`, when the window was opened with one, must be the id of the project there. Rejects
+   * with an `AskFailed` whose `status` is 404 when the folder is no longer that project, and with another when
+   * nothing answered.
+   */
+  where(project: string, projectId: string | null): Promise<{ project: string }>
 }
 
 /* The reads carry the ticket too: the doors under /api/ answer only this app's own page. */
@@ -124,6 +131,10 @@ export const decks: Decks = {
   },
   async citations(project, slug) {
     return (await get<CitationsReply>('./api/citations', { project, slug })).slides
+  },
+  async where(project, projectId) {
+    const reply = await get<{ project: string }>('./api/where', projectId ? { project, projectId } : { project })
+    return { project: reply.project }
   },
   async source(project, path, from, to) {
     return (await get<SourceReply>('./api/source', { project, path, from: String(from), to: String(to) })).text

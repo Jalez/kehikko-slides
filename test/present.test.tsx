@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
+import { AskFailed } from 'kehikot-module-protocol/client'
+
 import { Screen } from '../src/app.tsx'
 import type { PassageLike } from '../src/follow.ts'
 import { PresenterView } from '../src/presenter.tsx'
@@ -465,5 +467,82 @@ describe('windows of their own', () => {
     render(<PrintView project="/work/thesis" slug="defence" decks={fake.decks} print={() => printed++} ready={() => Promise.resolve()} />)
     await waitFor(() => expect(printed).toBe(1))
     expect(pictures()).toEqual([DOOR])
+  })
+})
+
+describe('the windows of their own, when the project’s folder is renamed', () => {
+  const NEW = '/work/renamed-thesis'
+  const ID = 'a1b2c3d4-0000-4000-8000-000000000001'
+
+  test('the presenter view asks where the project is, and reads the deck from there', async () => {
+    const fake = fakeDecks({ where: async () => ({ project: NEW }) }, { text: LINKED })
+    render(<PresenterView project="/work/thesis" projectId={ID} slug="defence" decks={fake.decks} />)
+    await screen.findByRole('region', { name: 'notes' })
+    await waitFor(() => expect(fake.of('read').map((call) => call.args[0])).toContain(NEW))
+  })
+
+  test('the print view does the same', async () => {
+    const fake = fakeDecks({ where: async () => ({ project: NEW }) }, { text: LINKED })
+    let printed = 0
+    render(<PrintView project="/work/thesis" projectId={ID} slug="defence" decks={fake.decks} print={() => printed++} ready={() => Promise.resolve()} />)
+    await waitFor(() => expect(printed).toBeGreaterThan(0))
+    expect(fake.of('read').map((call) => call.args[0])).toContain(NEW)
+  })
+
+  test('it carries the id it was opened with when it asks', async () => {
+    const fake = fakeDecks({}, { text: LINKED })
+    render(<PrintView project="/work/thesis" projectId={ID} slug="defence" decks={fake.decks} print={() => {}} ready={() => Promise.resolve()} />)
+    await waitFor(() => expect(fake.of('where')).toHaveLength(1))
+    expect(fake.of('where')[0]?.args).toEqual(['/work/thesis', ID])
+  })
+
+  test('a folder that is now another project is refused in the server’s words, and no deck is shown', async () => {
+    const said = '/work/thesis is not a project open in Kehikot.'
+    const fake = fakeDecks(
+      { where: async () => { throw new AskFailed({ kind: 'refused', status: 404, error: said, body: null }) } },
+      { text: LINKED },
+    )
+    render(<PresenterView project="/work/thesis" projectId={ID} slug="defence" decks={fake.decks} />)
+    expect((await screen.findByText(said)).textContent).toBe(said)
+    expect(screen.queryByRole('region', { name: 'notes' })).toBeNull()
+  })
+
+  test('a server that does not answer changes nothing: the window keeps the path it has', async () => {
+    const fake = fakeDecks({ where: async () => { throw new AskFailed({ kind: 'down', status: null, error: 'not answering', body: null }) } }, { text: LINKED })
+    render(<PresenterView project="/work/thesis" projectId={ID} slug="defence" decks={fake.decks} />)
+    await screen.findByRole('region', { name: 'notes' })
+    expect(fake.of('read').map((call) => call.args[0])).toEqual(['/work/thesis'])
+  })
+
+  test('a read that fails asks again where the project is, and the deck opens from there', async () => {
+    let asked = 0
+    const fake = fakeDecks(
+      {
+        read: async (project) => {
+          if (project === '/work/thesis') throw new Error('There is no folder at "/work/thesis" on this machine.')
+          return { text: LINKED, version: 'v1' }
+        },
+        where: async () => (++asked < 2 ? { project: '/work/thesis' } : { project: NEW }),
+      },
+      { text: LINKED },
+    )
+    render(<PresenterView project="/work/thesis" projectId={ID} slug="defence" decks={fake.decks} />)
+    await screen.findByRole('region', { name: 'notes' })
+    expect(asked).toBeGreaterThanOrEqual(2)
+  })
+
+  test('a window opened from the screen carries the project’s id in its address', async () => {
+    const opened: string[] = []
+    const was = window.open
+    window.open = ((url: string) => (opened.push(url), {} as Window)) as typeof window.open
+    try {
+      ;(window as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM.setURL('http://127.0.0.1:7990/app')
+      drawFollowing(LINKED, { projectId: ID })
+      await waitFor(() => expect(editor().value).toBe(LINKED))
+      press('presenter')
+      expect(opened[0]).toBe(`http://127.0.0.1:7990/app?presenter=defence&project=%2Fwork%2Fthesis&projectId=${ID}&theme=dark`)
+    } finally {
+      window.open = was
+    }
   })
 })

@@ -47,9 +47,15 @@ describe('windows and routes', () => {
       page: 'presenter',
       slug: 'defence',
       project: '/w',
+      projectId: null,
       theme: 'dark',
     })
-    expect(routeOf('http://h/print?deck=defence&project=%2Fw')).toEqual({ page: 'print', slug: 'defence', project: '/w', theme: null })
+    expect(routeOf('http://h/print?deck=defence&project=%2Fw')).toEqual({ page: 'print', slug: 'defence', project: '/w', projectId: null, theme: null })
+    /* The windows carry the project's id too, which is what finds it again when the folder is renamed. */
+    expect(routeOf('http://h/app?presenter=defence&project=%2Fw&projectId=a1b2c3d4-0000-4000-8000-000000000001')).toMatchObject({
+      page: 'presenter',
+      projectId: 'a1b2c3d4-0000-4000-8000-000000000001',
+    })
   })
 
   test('addresses sit next to the page, and a blocked window is reported', () => {

@@ -7,6 +7,7 @@ import { SlideView } from '@/slides/slide-view'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 
 import { parseDeck } from '../deck/format.ts'
+import { useProjectNow } from './project-now.ts'
 import { step, talkKey, useTalk } from './talk.ts'
 
 /**
@@ -17,16 +18,20 @@ import { step, talkKey, useTalk } from './talk.ts'
  * when one window is in the desktop app and the other in a browser.
  */
 export function PresenterView({
-  project,
+  project: opened,
+  projectId = null,
   slug,
   decks = realDecks,
   now = Date.now,
 }: {
   project: string | null
+  projectId?: string | null
   slug: string
   decks?: Decks
   now?: () => number
 }) {
+  /* The path the project is at now: the one in the address, until the server says it moved. */
+  const { project, refused, recheck } = useProjectNow(decks, opened, projectId)
   const [text, setText] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [at, setAt] = useState<{ index: number; blank: boolean } | null>(null)
@@ -40,7 +45,12 @@ export function PresenterView({
       decks
         .read(project, slug)
         .then((read) => alive && (setText(read.text), setFailed(null)))
-        .catch((caught: unknown) => alive && setFailed(caught instanceof Error ? caught.message : String(caught)))
+        .catch((caught: unknown) => {
+          if (!alive) return
+          setFailed(caught instanceof Error ? caught.message : String(caught))
+          /* It may be that the folder moved: ask where the project is. */
+          recheck()
+        })
     void load()
     /* Edited while the talk is on (a typo fixed in the other window): show the fix. */
     const stop = decks.watch(project, (event) => {
@@ -50,7 +60,7 @@ export function PresenterView({
       alive = false
       stop()
     }
-  }, [decks, project, slug])
+  }, [decks, project, slug, recheck])
 
   useEffect(() => {
     const timer = setInterval(() => setTick(now()), 1000)
@@ -89,6 +99,7 @@ export function PresenterView({
   if (!project || !slug) {
     return <Message>This presenter view needs a deck and a project in its address. Open it from Slides.</Message>
   }
+  if (refused) return <Message>{refused}</Message>
   if (failed) return <Message>Could not open this deck: {failed}</Message>
   if (text === null) return <Message>Opening the deck…</Message>
 

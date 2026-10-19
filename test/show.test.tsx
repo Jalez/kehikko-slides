@@ -34,8 +34,8 @@ function project(name: string): string {
 const none = new URLSearchParams()
 const q = (query: Record<string, string>) => new URLSearchParams(query)
 
-function tool(name: string, args: Record<string, unknown>): { text: string; error: boolean } {
-  const reply = answer('POST', '/mcp', none, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, null)
+async function tool(name: string, args: Record<string, unknown>): Promise<{ text: string; error: boolean }> {
+  const reply = await answer('POST', '/mcp', none, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, null)
   const result = (reply?.body as { result?: { content?: { text: string }[]; isError?: boolean } }).result
   return { text: result?.content?.[0]?.text ?? '', error: result?.isError === true }
 }
@@ -68,7 +68,7 @@ async function show(args: Record<string, unknown>): Promise<{ text: string; erro
  * and says what it did with each pointing — unless `does` is null, which is a
  * page that says nothing.
  */
-function page(dir: string, does: { did: string; hidden?: boolean } | null = { did: 'shown' }, presenting = false) {
+async function page(dir: string, does: { did: string; hidden?: boolean } | null = { did: 'shown' }, presenting = false) {
   const seen: PointerState[] = []
   const heard: unknown[] = []
   const opened = stream('GET', '/api/pointer', q(presenting ? { project: dir, slug: 'd', presenting: '1' } : { project: dir, slug: 'd' }), (event) => {
@@ -76,8 +76,10 @@ function page(dir: string, does: { did: string; hidden?: boolean } | null = { di
     seen.push(state)
     if (state.at === 0 || !does) return
     /* As a page does: after the door has finished telling it, on a request of its own. */
-    queueMicrotask(() => heard.push(answer('POST', '/api/pointer', none, { project: dir, slug: 'd', at: state.at, ...does }, TICKET)?.body))
+    queueMicrotask(() => void answer('POST', '/api/pointer', none, { project: dir, slug: 'd', at: state.at, ...does }, TICKET).then((said) => heard.push(said?.body)))
   })
+  /* The stream is attached once the host has said the folder is a project: a moment. */
+  await new Promise((resolve) => setTimeout(resolve, 5))
   return { seen, heard, close: () => opened && 'close' in opened && opened.close() }
 }
 
@@ -98,10 +100,10 @@ title: Defence
 ## Results
 `
 
-function drafted(name: string): string {
+async function drafted(name: string): Promise<string> {
   const dir = project(name)
-  tool('create_deck', { project: dir, title: 'D' })
-  tool('write_deck', { project: dir, deck: 'd', markdown: DECK, summary: 'draft' })
+  await tool('create_deck', { project: dir, title: 'D' })
+  await tool('write_deck', { project: dir, deck: 'd', markdown: DECK, summary: 'draft' })
   return dir
 }
 
@@ -119,8 +121,8 @@ afterAll(() => {
 
 describe('show_slide on the MCP door', () => {
   test('a page open on the deck is told, and the answer is what that page said: the slide is on its screen', async () => {
-    const dir = drafted('watched')
-    const one = page(dir)
+    const dir = (await drafted('watched'))
+    const one = (await page(dir))
     expect(one.seen).toEqual([{ slug: 'd', index: 0, at: 0 }])
 
     const shown = await show({ project: dir, deck: 'd', index: 2 })
@@ -141,21 +143,21 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('with no page open it says nobody saw, without waiting, and a page that opens later is not turned', async () => {
-    const dir = drafted('unwatched')
+    const dir = (await drafted('unwatched'))
     POINTER.waitMs = 60_000
     const shown = await show({ project: dir, deck: 'd', index: 1 })
     expect(shown.error).toBe(false)
     expect(shown.text).toMatch(/^No Slides page is open on "d", so nobody was shown slide 1 of "d" \(The problem; 3 in the deck\)\. Nothing was turned and nothing was written\./)
     expect(shown.said).toMatchObject({ outcome: 'unseen', pages: 0, open: 0, why: 'No Slides page is open on "d".' })
 
-    const late = page(dir)
+    const late = (await page(dir))
     expect(late.seen).toEqual([{ slug: 'd', index: 0, at: 0 }])
     late.close()
   })
 
   test('a slide outside the parts picked on a page is on its screen as the slide in hand, and the answer says so', async () => {
-    const dir = drafted('outside')
-    const one = page(dir, { did: 'outside' })
+    const dir = (await drafted('outside'))
+    const one = (await page(dir, { did: 'outside' }))
     const shown = await show({ project: dir, deck: 'd', index: 0 })
     expect(shown.text).toBe(
       'Slide 0 of "d" (Bridging the gap; 3 in the deck) is on screen in one open Slides page on this deck. '
@@ -164,7 +166,7 @@ describe('show_slide on the MCP door', () => {
     )
     expect(shown.said).toMatchObject({ outcome: 'shown', pages: 1, open: 1, outside: 1 })
 
-    const two = page(dir)
+    const two = (await page(dir))
     const both = await show({ project: dir, deck: 'd', index: 0 })
     expect(both.text).toContain('is on screen in 2 open Slides pages on this deck. On 1 of them it is outside the picked parts, and is drawn there as the slide in hand')
     expect(both.said).toMatchObject({ outcome: 'shown', pages: 2, open: 2, outside: 1 })
@@ -173,8 +175,8 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('a page that turned in a hidden window is not somebody seeing it', async () => {
-    const dir = drafted('hidden')
-    const one = page(dir, { did: 'shown', hidden: true })
+    const dir = (await drafted('hidden'))
+    const one = (await page(dir, { did: 'shown', hidden: true }))
     const shown = await show({ project: dir, deck: 'd', index: 2 })
     expect(shown.error).toBe(false)
     expect(shown.text).toBe(
@@ -186,8 +188,8 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('a page that does not say what it did is waited for, and then is not counted as showing', async () => {
-    const dir = drafted('silent')
-    const one = page(dir, null)
+    const dir = (await drafted('silent'))
+    const one = (await page(dir, null))
     const began = Date.now()
     const shown = await show({ project: dir, deck: 'd', index: 2 })
     expect(Date.now() - began).toBeGreaterThanOrEqual(35)
@@ -197,7 +199,7 @@ describe('show_slide on the MCP door', () => {
     expect(shown.said).toMatchObject({ outcome: 'unseen', pages: 0, open: 1, silent: 1 })
 
     /* Beside one that does say, the slide is shown — on one page, and the other is still said to be unknown. */
-    const two = page(dir)
+    const two = (await page(dir))
     const both = await show({ project: dir, deck: 'd', index: 1 })
     expect(both.said).toMatchObject({ outcome: 'shown', pages: 1, open: 2, silent: 1 })
     expect(both.text).toMatch(/^Slide 1 of "d" \(The problem; 3 in the deck\) is on screen in one open Slides page on this deck\. One page was sent the pointer and did not say/)
@@ -206,8 +208,8 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('a page holding unsaved text without that slide does not turn, and the deck is said to have declined', async () => {
-    const dir = drafted('stale')
-    const one = page(dir, { did: 'stale' })
+    const dir = (await drafted('stale'))
+    const one = (await page(dir, { did: 'stale' }))
     const shown = await show({ project: dir, deck: 'd', index: 2 })
     expect(shown.text).toContain('One page was not turned: it holds text that is not saved and has no slide 2 in it.')
     expect(shown.said).toMatchObject({ outcome: 'declined', pages: 0, open: 1, stale: 1 })
@@ -215,8 +217,8 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('a page that is presenting is counted and not told, and the answer says the deck was not turned', async () => {
-    const dir = drafted('presented')
-    const stage = page(dir, { did: 'shown' }, true)
+    const dir = (await drafted('presented'))
+    const stage = (await page(dir, { did: 'shown' }, true))
     const alone = await show({ project: dir, deck: 'd', index: 2 })
     expect(alone.error).toBe(false)
     expect(alone.text).toBe(
@@ -225,7 +227,7 @@ describe('show_slide on the MCP door', () => {
     )
     expect(alone.said).toMatchObject({ outcome: 'declined', pages: 0, open: 1, presenting: 1 })
 
-    const one = page(dir)
+    const one = (await page(dir))
     const both = await show({ project: dir, deck: 'd', index: 1 })
     expect(both.text).toMatch(/^Slide 1 of "d" \(The problem; 3 in the deck\) is on screen in one open Slides page on this deck\. One page is presenting and was not turned: a talk is not turned from outside\./)
     expect(both.said).toMatchObject({ outcome: 'shown', pages: 1, open: 2, presenting: 1 })
@@ -233,7 +235,7 @@ describe('show_slide on the MCP door', () => {
     expect(stage.seen).toEqual([{ slug: 'd', index: 0, at: 0 }])
 
     /* A page that began its talk as the pointer was on its way says so itself. */
-    const racing = page(dir, { did: 'presenting' })
+    const racing = (await page(dir, { did: 'presenting' }))
     one.close()
     expect((await show({ project: dir, deck: 'd', index: 1 })).said).toMatchObject({ outcome: 'declined', open: 2, presenting: 2 })
     stage.close()
@@ -241,38 +243,39 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('what a page says is taken only for the pointing being waited on, only in the words there are, and only from the page', async () => {
-    const dir = drafted('heard')
-    const one = page(dir, null)
+    const dir = (await drafted('heard'))
+    const one = (await page(dir, null))
     const waiting = show({ project: dir, deck: 'd', index: 2 })
+    await new Promise((resolve) => setTimeout(resolve, 5))
     const at = one.seen[1]!.at
-    const say = (body: Record<string, unknown>, ticket: string | null = TICKET) => answer('POST', '/api/pointer', none, { project: dir, slug: 'd', ...body }, ticket)
-    expect(say({ at, did: 'shown' }, null)?.status).toBe(403)
-    expect(say({ at, did: 'looked at' })?.status).toBe(400)
-    expect(say({ did: 'shown' })?.status).toBe(400)
-    expect(say({ at: at - 1, did: 'shown' })?.body).toEqual({ ok: true, heard: false })
-    expect(say({ at, did: 'shown' })?.body).toEqual({ ok: true, heard: true })
+    const say = async (body: Record<string, unknown>, ticket: string | null = TICKET) => await answer('POST', '/api/pointer', none, { project: dir, slug: 'd', ...body }, ticket)
+    expect((await say({ at, did: 'shown' }, null))?.status).toBe(403)
+    expect((await say({ at, did: 'looked at' }))?.status).toBe(400)
+    expect((await say({ did: 'shown' }))?.status).toBe(400)
+    expect((await say({ at: at - 1, did: 'shown' }))?.body).toEqual({ ok: true, heard: false })
+    expect((await say({ at, did: 'shown' }))?.body).toEqual({ ok: true, heard: true })
     expect((await waiting).said).toMatchObject({ outcome: 'shown', pages: 1 })
     /* Said again once it has been answered: nobody is waiting. */
-    expect(say({ at, did: 'shown' })?.body).toEqual({ ok: true, heard: false })
+    expect((await say({ at, did: 'shown' }))?.body).toEqual({ ok: true, heard: false })
     one.close()
   })
 
   test('a second pointing ends the wait for the first, which answers with what it had heard', async () => {
-    const dir = drafted('twice')
+    const dir = (await drafted('twice'))
     POINTER.waitMs = 60_000
-    const one = page(dir, null)
+    const one = (await page(dir, null))
     const first = show({ project: dir, deck: 'd', index: 1 })
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 5))
     const second = show({ project: dir, deck: 'd', index: 2 })
     expect((await first).said).toMatchObject({ outcome: 'unseen', silent: 1, index: 1 })
-    answer('POST', '/api/pointer', none, { project: dir, slug: 'd', at: one.seen[2]!.at, did: 'shown' }, TICKET)
+    await answer('POST', '/api/pointer', none, { project: dir, slug: 'd', at: one.seen[2]!.at, did: 'shown' }, TICKET)
     expect((await second).said).toMatchObject({ outcome: 'shown', pages: 1, index: 2 })
     one.close()
   })
 
   test('showing writes nothing: the deck and its history are as they were', async () => {
-    const dir = drafted('pointer-only')
-    const one = page(dir)
+    const dir = (await drafted('pointer-only'))
+    const one = (await page(dir))
     await show({ project: dir, deck: 'd', index: 2 })
     one.close()
     await show({ project: dir, deck: 'd', index: 0 })
@@ -281,8 +284,8 @@ describe('show_slide on the MCP door', () => {
   })
 
   test('a slide that is not there is refused with the deck’s own slides, and nobody is told', async () => {
-    const dir = drafted('refused')
-    const one = page(dir)
+    const dir = (await drafted('refused'))
+    const one = (await page(dir))
     for (const index of [3, -1, 1.5, 'six', undefined]) {
       const refused = await show({ project: dir, deck: 'd', index })
       expect(refused.error).toBe(true)
@@ -304,8 +307,8 @@ describe('show_slide on the MCP door', () => {
     one.close()
   })
 
-  test('it is listed as a tool that writes nothing, with the shape of its answer', () => {
-    const reply = answer('POST', '/mcp', none, { jsonrpc: '2.0', id: 1, method: 'tools/list' }, null)
+  test('it is listed as a tool that writes nothing, with the shape of its answer', async () => {
+    const reply = (await answer('POST', '/mcp', none, { jsonrpc: '2.0', id: 1, method: 'tools/list' }, null))
     const listed = (reply?.body as { result: { tools: { name: string; annotations?: unknown; inputSchema: { required: string[] }; outputSchema?: { required: string[]; properties: { outcome: { enum: string[] } } } }[] } }).result.tools
     const one = listed.find((each) => each.name === 'show_slide')!
     expect(one.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false })
@@ -317,10 +320,10 @@ describe('show_slide on the MCP door', () => {
     for (const each of listed) expect((each.annotations as { readOnlyHint?: boolean } | undefined)?.readOnlyHint).toBe(READS.includes(each.name))
   })
 
-  test('the pointer door refuses a deck name that is not one', () => {
+  test('the pointer door refuses a deck name that is not one', async () => {
     const refused = stream('GET', '/api/pointer', q({ project: project('door'), slug: '../x' }), () => {})
     expect(refused && 'reply' in refused && refused.reply.status).toBe(400)
-    expect(answer('POST', '/api/pointer', none, { project: project('door'), slug: '../x', at: 1, did: 'shown' }, TICKET)?.status).toBe(400)
+    expect((await answer('POST', '/api/pointer', none, { project: project('door'), slug: '../x', at: 1, did: 'shown' }, TICKET))?.status).toBe(400)
   })
 })
 
@@ -330,18 +333,18 @@ const pointing = (over: Partial<PassageLike>): PassageLike => ({ path: FILE, pag
 const bytes = (text: string, before: string) => new TextEncoder().encode(text.slice(0, text.indexOf(before))).length
 
 describe('a passage naming the deck’s file', () => {
-  test('the file is the deck’s own, under the project', () => {
+  test('the file is the deck’s own, under the project', async () => {
     expect(deckPath(PROJECT, 'defence')).toBe(FILE)
     expect(deckPath(`${PROJECT}/`, 'defence')).toBe(FILE)
   })
 
-  test('a page is the slide’s number, counting from 1', () => {
+  test('a page is the slide’s number, counting from 1', async () => {
     expect(slidePointed(pointing({ page: 1 }), PROJECT, 'defence', DECK)).toBe(0)
     expect(slidePointed(pointing({ page: 3 }), PROJECT, 'defence', DECK)).toBe(2)
     expect(slidePointed(pointing({ page: 4 }), PROJECT, 'defence', DECK)).toBeNull()
   })
 
-  test('a range is bytes of the Markdown, and wins over the page', () => {
+  test('a range is bytes of the Markdown, and wins over the page', async () => {
     const accented = DECK.replace('Bridging the gap', 'Bridging the gäp — née')
     const from = bytes(accented, '## Results')
     expect(from).toBeGreaterThan(accented.indexOf('## Results'))
@@ -349,7 +352,7 @@ describe('a passage naming the deck’s file', () => {
     expect(slidePointed(pointing({ from: bytes(DECK, '## The problem'), to: bytes(DECK, '## Results') }), PROJECT, 'defence', DECK)).toBe(1)
   })
 
-  test('a place the deck does not have is refused, not taken as the nearest slide', () => {
+  test('a place the deck does not have is refused, not taken as the nearest slide', async () => {
     const size = new TextEncoder().encode(DECK).length
     const third = DECK.indexOf('---\n\n<!-- section: chapters/3.tex') + '---\n'.length
     const at = (from: number) => slidePointed(pointing({ from, to: from }), PROJECT, 'defence', DECK)
@@ -363,13 +366,13 @@ describe('a passage naming the deck’s file', () => {
     expect(at(1.5)).toBeNull()
 
     const page = (number: number) => slidePointed(pointing({ page: number }), PROJECT, 'defence', DECK)
-    expect(page(0)).toBeNull()
-    expect(page(3)).toBe(2)
-    expect(page(4)).toBeNull()
-    expect(page(1.5)).toBeNull()
+    expect((await page(0))).toBeNull()
+    expect((await page(3))).toBe(2)
+    expect((await page(4))).toBeNull()
+    expect((await page(1.5))).toBeNull()
   })
 
-  test('another file, another deck, or no slide named: nothing is pointed at', () => {
+  test('another file, another deck, or no slide named: nothing is pointed at', async () => {
     expect(slidePointed(null, PROJECT, 'defence', DECK)).toBeNull()
     expect(slidePointed(pointing({}), PROJECT, 'defence', DECK)).toBeNull()
     expect(slidePointed(pointing({ page: 2 }), PROJECT, 'other', DECK)).toBeNull()
