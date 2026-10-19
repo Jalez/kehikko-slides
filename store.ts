@@ -12,7 +12,7 @@ import {
 } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 
-import { kehikotDir, moduleDir, resolveSource, within, type CitationView } from 'kehikot-module-protocol'
+import { kehikotDir, moduleDir, projectFile, projectKey, readProjectFile, resolveSource, within, type CitationView } from 'kehikot-module-protocol'
 
 import { HISTORY_PER_DECK, MAX_DECK_CHARS, SLUG, type DeckFile, type DeckSummary, type HistoryEntry } from './deck/api.ts'
 import { emptySlide, parseDeck, retitle, serialiseDeck, slugFor } from './deck/format.ts'
@@ -36,7 +36,7 @@ export type Result<T> = { ok: true; value: T } | Failure
 
 export const HISTORY_FILE = 'history.json'
 
-const NO_PROJECT =
+export const NO_PROJECT =
   'Nothing has said which project this is, so there is nowhere to keep a deck. Open a project in the host, '
   + 'or send project: the absolute directory of the project.'
 
@@ -502,6 +502,22 @@ export function slidesDir(project: string | null | undefined, make: boolean): Re
     if (after) return { ok: false, error: after }
   }
   return { ok: true, value: { root: root.value, dir } }
+}
+
+/**
+ * What state that outlives a request is keyed by for this project: its id (`.kehikot/project.json`, which
+ * the host writes) when it has one, else its path (`projectKey`). A map from path to state goes stale
+ * the moment the folder is renamed; the id does not.
+ */
+export function keyOf(root: string): string {
+  let id: string | null = null
+  try {
+    const file = projectFile(root)
+    id = file === null ? null : (readProjectFile(JSON.parse(readFileSync(file, 'utf8')))?.id ?? null)
+  } catch {
+    id = null
+  }
+  return projectKey({ projectId: id, projectPath: root })?.key ?? root
 }
 
 /** The project folder, realpath'd, or a sentence saying why there is none. */

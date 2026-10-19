@@ -24,7 +24,7 @@ export type Press = (press: { item: string; value?: string | boolean }) => strin
  * whether a host has ever sent one — which only a host that draws the header does. `drawsHeader` is the host's
  * own word for it (1.4.0): `true`, `false`, or `null` from a host that does not say, and then `pressed` decides.
  */
-export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'epic' | 'theme' | 'parts' | 'request'> & {
+export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'projectId' | 'epic' | 'theme' | 'parts' | 'request'> & {
   /** Whether the host draws this page's header: its greeting says (1.4.0), `null` from one that does not. */
   drawsHeader: boolean | null
   passage: PassageLike | null

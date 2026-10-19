@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, watch, type FSWatcher } from 'no
 import { join } from 'node:path'
 
 import { SLUG, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
-import { slidesDir, versionOf, type Result } from './store.ts'
+import { keyOf, slidesDir, versionOf, type Result } from './store.ts'
 
 /**
  * What is pushed to pages: a deck file changed (by any path — this module's
@@ -23,6 +23,9 @@ export const SETTLE_MS = 100
 const LOOK_FOR_FOLDER_MS = 2000
 
 interface Group {
+  /** The project's key (`keyOf`) the group is kept under, and the folder and slides folder it is looking at now. */
+  key: string
+  root: string
   dir: string
   listeners: Set<Listener<DeckChange>>
   /** Last version seen of each deck, so an event is sent only for a real change. */
@@ -32,6 +35,8 @@ interface Group {
   poll: ReturnType<typeof setInterval> | null
 }
 
+/* By the project's key, not the folder: a folder that is renamed under a watch is the same group,
+   pointed at where it is now (`lookAt`) the next time anything says where that is. */
 const groups = new Map<string, Group>()
 
 function versions(dir: string): Map<string, string> {
@@ -52,6 +57,9 @@ function versions(dir: string): Map<string, string> {
 /** Look at the decks now and tell every listener about each one that changed since last time. */
 function rescan(group: Group): void {
   group.timer = null
+  /* A project folder that is gone — renamed, or moved, and not yet said to be anywhere — has no decks
+     to report gone. Nothing is said until the group is told where it is (`lookAt`). */
+  if (!existsSync(group.root)) return
   const now = versions(group.dir)
   const changes: DeckChange[] = []
   for (const [slug, version] of now) if (group.known.get(slug) !== version) changes.push({ slug, version })
@@ -77,6 +85,28 @@ function attach(group: Group): void {
   }
 }
 
+/** Keep looking for a slides folder that is not there yet. */
+function lookForFolder(group: Group): void {
+  if (group.watcher || group.poll) return
+  group.poll = setInterval(() => attach(group), LOOK_FOR_FOLDER_MS)
+}
+
+/**
+ * Say where a group's project is now. The same project in another folder is the same group: its
+ * watch moves with it and what it has seen is kept, so only a real change to a deck is reported.
+ */
+function lookAt(group: Group, root: string, dir: string): void {
+  if (group.dir === dir) return
+  group.watcher?.close()
+  group.watcher = null
+  if (group.timer) clearTimeout(group.timer)
+  group.timer = null
+  group.root = root
+  group.dir = dir
+  attach(group)
+  lookForFolder(group)
+}
+
 function settle(group: Group): void {
   if (group.timer) clearTimeout(group.timer)
   group.timer = setTimeout(() => rescan(group), SETTLE_MS)
@@ -91,9 +121,13 @@ function settle(group: Group): void {
 export function watchDecks(project: string, listener: Listener<DeckChange>): Result<() => void> {
   const dir = slidesDir(project, false)
   if (!dir.ok) return dir
-  let group = groups.get(dir.value.dir)
-  if (!group) {
+  const key = keyOf(dir.value.root)
+  let group = groups.get(key)
+  if (group) lookAt(group, dir.value.root, dir.value.dir)
+  else {
     group = {
+      key,
+      root: dir.value.root,
       dir: dir.value.dir,
       listeners: new Set(),
       known: versions(dir.value.dir),
@@ -101,12 +135,9 @@ export function watchDecks(project: string, listener: Listener<DeckChange>): Res
       timer: null,
       poll: null,
     }
-    groups.set(dir.value.dir, group)
+    groups.set(key, group)
     attach(group)
-    if (!group.watcher) {
-      const waiting = group
-      waiting.poll = setInterval(() => attach(waiting), LOOK_FOR_FOLDER_MS)
-    }
+    lookForFolder(group)
   }
   const mine = group
   mine.listeners.add(listener)
@@ -118,7 +149,7 @@ export function watchDecks(project: string, listener: Listener<DeckChange>): Res
       mine.watcher?.close()
       if (mine.timer) clearTimeout(mine.timer)
       if (mine.poll) clearInterval(mine.poll)
-      groups.delete(mine.dir)
+      if (groups.get(mine.key) === mine) groups.delete(mine.key)
     },
   }
 }
@@ -131,8 +162,9 @@ export function watchDecks(project: string, listener: Listener<DeckChange>): Res
 export function poke(project: string): void {
   const dir = slidesDir(project, false)
   if (!dir.ok) return
-  const group = groups.get(dir.value.dir)
+  const group = groups.get(keyOf(dir.value.root))
   if (!group) return
+  lookAt(group, dir.value.root, dir.value.dir)
   attach(group)
   settle(group)
 }
@@ -148,8 +180,12 @@ export function watching(): number {
 
 const talks = new Map<string, { state: PresentState; listeners: Set<Listener<PresentState>> }>()
 
+/* A talk and a pointer are kept by the project's key and the deck, not the folder it is in: a project
+   renamed under a talk is still the same talk. */
+const stateKey = (root: string, slug: string): string => `${keyOf(root)}\0${slug}`
+
 function talk(root: string, slug: string) {
-  const key = `${root}\0${slug}`
+  const key = stateKey(root, slug)
   let one = talks.get(key)
   if (!one) {
     one = { state: { slug, index: 0, blank: false, at: 0 }, listeners: new Set() }
@@ -218,7 +254,7 @@ const pointers = new Map<string, { state: PointerState; listeners: Map<Listener<
  * deck is kept at.
  */
 export function followPointer(root: string, slug: string, listener: Listener<PointerState>, presenting = false): () => void {
-  const key = `${root}\0${slug}`
+  const key = stateKey(root, slug)
   let one = pointers.get(key)
   if (!one) {
     one = { state: { slug, index: 0, at: 0 }, listeners: new Map(), waiting: null }
@@ -250,7 +286,7 @@ export function pointAt(
   slug: string,
   index: number,
 ): { state: PointerState; watching: number; presenting: number; heard: Promise<PointerHeard[]> } {
-  const one = pointers.get(`${root}\0${slug}`)
+  const one = pointers.get(stateKey(root, slug))
   /* Two pointings in one millisecond are still two: a page tells them apart by `at`. */
   const state = { slug, index, at: Math.max(Date.now(), (one?.state.at ?? 0) + 1) }
   if (!one) return { state, watching: 0, presenting: 0, heard: Promise.resolve([]) }
@@ -284,7 +320,7 @@ export function pointAt(
  * is waiting for it: the answer came too late, or was to an older pointing.
  */
 export function heardPointer(root: string, slug: string, at: number, said: PointerHeard): boolean {
-  const waiting = pointers.get(`${root}\0${slug}`)?.waiting
+  const waiting = pointers.get(stateKey(root, slug))?.waiting
   if (!waiting || waiting.at !== at) return false
   waiting.heard.push(said)
   if (waiting.heard.length >= waiting.need) waiting.settle()

@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'node:path'
 
-import { KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
+import { DOOR_PROJECT_SAYS, KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
 
 import { establishBuild, mintTicket, refuseTicket, type Reply } from 'kehikot-module-protocol/serve'
 
@@ -17,8 +17,10 @@ import {
   type Slide,
 } from './deck/format.ts'
 import { POINTER, POINTER_DID, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
+import { resolveFolder, setHostResolve } from './host-ask.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
 import {
+  NO_PROJECT,
   badSlug,
   citations,
   citedSlice,
@@ -74,6 +76,26 @@ const refused = (failure: Failure): Reply =>
 
 /** What an agent is called when it does not say. */
 const AGENT = process.env.SLIDES_AGENT ?? process.env.KEHIKOT_AGENT ?? 'an agent'
+
+/**
+ * The project a caller named, as the host has it (protocol 2.3.0, `resolveDoorProject`): the folder to work
+ * on, or a sentence saying why not. Every door that reads or writes a project asks here first, and works on
+ * the path it gets back, never the one it was handed. A folder that was a project's and is now another's,
+ * or nobody's, is refused; one that was renamed is followed to where the project is now, once the host has
+ * checked it is the same project. With no host there is nothing to follow and nothing to trust, so it is a
+ * refusal: nothing is written under a path the host does not vouch for.
+ */
+export type ProjectAt = { ok: true; path: string; id: string | null; movedFrom: string | null } | { ok: false; why: string; status: number }
+
+export async function projectAt(value: unknown): Promise<ProjectAt> {
+  const named = typeof value === 'string' ? value.trim() : ''
+  if (!named) return { ok: false, why: NO_PROJECT, status: 400 }
+  const at = await resolveFolder(named)
+  if (!at.ok) return { ok: false, why: at.why, status: at.reason === 'unnamed' ? 400 : 404 }
+  return { ok: true, path: at.path, id: at.id ?? null, movedFrom: at.movedFrom ?? null }
+}
+
+export { setHostResolve }
 
 /* ------------------------------------------------------------------ *
  * The MCP door, for agents.
@@ -406,6 +428,19 @@ function directiveSafe(what: string, value: string): void {
   }
 }
 
+/**
+ * A tool call with its project resolved by the host: the tool is handed the path the host gave back, and
+ * when that is not the path named, the answer says so — the agent uses the new path from then on.
+ */
+async function callResolved(name: string, args: Record<string, unknown>): Promise<string> {
+  const named = str(args.project, 1000)
+  if (!named) return call(name, args)
+  const at = await projectAt(named)
+  if (!at.ok) throw new Error(at.why)
+  const text = call(name, { ...args, project: at.path })
+  return at.movedFrom ? `${text}\n\n${DOOR_PROJECT_SAYS.followed(at.movedFrom, at.path)}` : text
+}
+
 function call(name: string, args: Record<string, unknown>): string {
   if (name === 'list_decks') {
     const project = projectOf(args, name)
@@ -521,7 +556,10 @@ const SHOW_OUTCOMES = ['shown', 'unseen', 'declined'] as const
  */
 async function showSlide(args: Record<string, unknown>): Promise<{ text: string; structuredContent: Record<string, unknown> }> {
   const name = 'show_slide'
-  const project = projectOf(args, name)
+  const named = projectOf(args, name)
+  const at = await projectAt(named)
+  if (!at.ok) throw new Error(at.why)
+  const project = at.path
   const slug = deckOf(args)
   const root = must(projectRoot(project), name)
   const slides = parseDeck(must(readDeck(project, slug), name).text, slug).slides
@@ -575,6 +613,7 @@ async function showSlide(args: Record<string, unknown>): Promise<{ text: string;
       + (count.presenting && count.presenting === count.open ? ' Call show_slide again once the talk is over.' : '')
   }
   const why = outcome === 'shown' ? '' : count.open ? kept.join(' ') : `No Slides page is open on "${slug}".`
+  if (at.movedFrom) text += `\n\n${DOOR_PROJECT_SAYS.followed(at.movedFrom, at.path)}`
   return { text, structuredContent: { deck: slug, index, slide: headline, slides: slides.length, outcome, ...count, why } }
 }
 
@@ -608,9 +647,12 @@ function mcp(rpc: Rpc): Reply | Promise<Reply> {
   }
   if (rpc.method === 'tools/call') {
     try {
-      return text(call(String(rpc.params?.name ?? ''), rpc.params?.arguments ?? {}))
+      return callResolved(String(rpc.params?.name ?? ''), rpc.params?.arguments ?? {}).then(
+        (said) => text(said),
+        /* A refusal is an answer the agent reads, not a transport failure it retries. */
+        (e: unknown) => text(e instanceof Error ? e.message : String(e), true),
+      )
     } catch (e) {
-      /* A refusal is an answer the agent reads, not a transport failure it retries. */
       return text(e instanceof Error ? e.message : String(e), true)
     }
   }
@@ -622,6 +664,9 @@ function mcp(rpc: Rpc): Reply | Promise<Reply> {
  * ------------------------------------------------------------------ */
 
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/** The doors under /api/ that are about one project, besides the picture (which is asked the same way). */
+const PROJECT_DOORS = new Set<string>([PATHS.decks, PATHS.deck, PATHS.history, PATHS.undo, PATHS.citations, PATHS.source, PATHS.present, PATHS.pointer])
 
 /** What rides with every picture. `style-src` lets an SVG's own `<style>` colour it; nothing in it can load or run. */
 export const PICTURE_HEADERS: Record<string, string> = {
@@ -641,13 +686,13 @@ function field(body: Record<string, unknown> | null, name: string): string {
   return body && typeof body[name] === 'string' ? (body[name] as string) : ''
 }
 
-export function answer(
+export async function answer(
   method: string,
   path: string,
   query: URLSearchParams,
   body: Record<string, unknown> | null,
   ticket: string | null,
-): Reply | null | Promise<Reply> {
+): Promise<Reply | null> {
   if (path === '/healthz') {
     return ok({ id: ID, version: VERSION, where: `<project>/${KEHIKOT_DIR}/slides/<deck>.md` })
   }
@@ -679,7 +724,8 @@ export function answer(
     if (method !== 'GET') return bad('A picture is only read.', 405)
     const refused = refuseTicket(query.get('ticket') ?? ticket, TICKET, 'That picture was not asked for by this app’s own page.')
     if (refused) return refused
-    const picture = pictureBytes(query.get('project'), query.get('path') ?? '')
+    const where = await projectAt(query.get('project'))
+    const picture = where.ok ? pictureBytes(where.path, query.get('path') ?? '') : null
     if (!picture) return bad('There is no such picture in this project.', 404)
     return { status: 200, body: null, raw: picture, headers: PICTURE_HEADERS }
   }
@@ -696,10 +742,30 @@ export function answer(
   )
   if (stranger) return stranger
   if (WRITES.has(method) && !body) return bad('That was not a request: a write sends a JSON object.')
-  const project = method === 'GET' ? query.get('project') : field(body, 'project')
+  const named = method === 'GET' ? query.get('project') : field(body, 'project')
   const slug = method === 'GET' ? (query.get('slug') ?? '') : field(body, 'slug')
+
+  /*
+   * Where a project is now, for a window of its own that was opened on a path and a project id: the
+   * presenter and the print view carry both in their address, because no host is there to say them.
+   * A folder renamed since is followed; a folder that is now another project is refused, so the window
+   * never shows a deck of a project it was not opened on.
+   */
+  if (path === PATHS.where && method === 'GET') {
+    const there = await projectAt(named)
+    if (!there.ok) return bad(there.why, there.status)
+    const opened = query.get('projectId')
+    if (opened && there.id && opened !== there.id) return bad(DOOR_PROJECT_SAYS.notProject(named ?? ''), 404)
+    return ok({ project: there.path, id: there.id, movedFrom: there.movedFrom })
+  }
+
+  /* Every other door under /api/ works on a project, and works on the path the host gives back. */
+  if (!PROJECT_DOORS.has(path)) return bad('There is nothing here.', 404)
+  const at = await projectAt(named)
+  if (!at.ok) return bad(at.why, at.status)
+  const project = at.path
   const after = (reply: Reply): Reply => {
-    if (reply.status === 200 && project) poke(project)
+    if (reply.status === 200) poke(project)
     return reply
   }
 
@@ -770,20 +836,38 @@ export function stream(
   emit: (event: DeckChange | PresentState | PointerState) => void,
 ): { reply: Reply } | { close: () => void } | null {
   if (method !== 'GET') return null
-  if (path === PATHS.watch) {
-    const watched = watchDecks(query.get('project') ?? '', emit)
-    return watched.ok ? { close: watched.value } : { reply: refused(watched) }
-  }
-  if (path === PATHS.present || path === PATHS.pointer) {
-    const root = projectRoot(query.get('project'))
-    if (!root.ok) return { reply: refused(root) }
-    const slug = query.get('slug') ?? ''
+  if (path !== PATHS.watch && path !== PATHS.present && path !== PATHS.pointer) return null
+  const slug = query.get('slug') ?? ''
+  if (path !== PATHS.watch) {
     const why = badSlug(slug)
     if (why) return { reply: bad(why) }
-    if (path === PATHS.present) return { close: followTalk(root.value, slug, emit) }
-    return { close: followPointer(root.value, slug, emit, query.get('presenting') === '1') }
   }
-  return null
+  /*
+   * The project is the host's to vouch for here too, and asking takes a moment, so the stream is opened
+   * at once and attached when the host has answered: to the path it gave back. A folder the host does not
+   * vouch for is never watched or followed, and the stream stays quiet. What is followed is kept by the
+   * project's key (`live.ts`), so a stream opened before a rename keeps its talk.
+   */
+  let close = (): void => {}
+  let gone = false
+  void projectAt(query.get('project')).then((at) => {
+    if (gone || !at.ok) return
+    if (path === PATHS.watch) {
+      const watched = watchDecks(at.path, emit)
+      if (watched.ok) close = watched.value
+      return
+    }
+    const root = projectRoot(at.path)
+    if (!root.ok) return
+    close = path === PATHS.present ? followTalk(root.value, slug, emit) : followPointer(root.value, slug, emit, query.get('presenting') === '1')
+    if (gone) close()
+  })
+  return {
+    close: () => {
+      gone = true
+      close()
+    },
+  }
 }
 
 export { MANIFEST }

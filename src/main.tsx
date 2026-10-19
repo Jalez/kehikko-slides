@@ -21,9 +21,9 @@ if (root) {
   createRoot(root).render(
     <StrictMode>
       {route.page === 'presenter' ? (
-        <PresenterView project={route.project} slug={route.slug} />
+        <PresenterView project={route.project} projectId={route.projectId} slug={route.slug} />
       ) : route.page === 'print' ? (
-        <PrintView project={route.project} slug={route.slug} />
+        <PrintView project={route.project} projectId={route.projectId} slug={route.slug} />
       ) : (
         <App />
       )}

@@ -7,6 +7,7 @@ import { SLIDE_HEIGHT, SlideFace, slideWidth } from '@/slides/slide-view'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 
 import { parseDeck, type Aspect } from '../deck/format.ts'
+import { useProjectNow } from './project-now.ts'
 
 /** The page rule for one slide per sheet, at the slide's own size, so a PDF page is a slide. */
 export function printCss(aspect: Aspect): string {
@@ -37,28 +38,41 @@ const printPage = () => window.print()
  * the preview draws, so the PDF matches what was on screen.
  */
 export function PrintView({
-  project,
+  project: opened,
+  projectId = null,
   slug,
   decks = realDecks,
   print = printPage,
   ready = settled,
 }: {
   project: string | null
+  projectId?: string | null
   slug: string
   decks?: Decks
   print?: () => void
   ready?: () => Promise<void>
 }) {
+  /* The path the project is at now: the one in the address, until the server says it moved. */
+  const { project, refused, recheck } = useProjectNow(decks, opened, projectId)
   const [text, setText] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
 
   useEffect(() => {
     if (!project || !slug) return
+    let alive = true
     decks
       .read(project, slug)
-      .then((read) => setText(read.text))
-      .catch((caught: unknown) => setFailed(caught instanceof Error ? caught.message : String(caught)))
-  }, [decks, project, slug])
+      .then((read) => alive && (setText(read.text), setFailed(null)))
+      .catch((caught: unknown) => {
+        if (!alive) return
+        setFailed(caught instanceof Error ? caught.message : String(caught))
+        /* It may be that the folder moved: ask where the project is. */
+        recheck()
+      })
+    return () => {
+      alive = false
+    }
+  }, [decks, project, slug, recheck])
 
   const deck = useMemo(() => (text === null ? null : parseDeck(text, slug)), [text, slug])
 
@@ -73,6 +87,7 @@ export function PrintView({
   }, [deck, print, ready])
 
   if (!project || !slug) return <p className="p-6 text-xs">This print view needs a deck and a project in its address. Open it from Slides.</p>
+  if (refused) return <p className="text-destructive p-6 text-xs">{refused}</p>
   if (failed) return <p className="text-destructive p-6 text-xs">Could not open this deck: {failed}</p>
   if (!deck) return <p className="text-muted-foreground p-6 text-xs">Opening the deck…</p>
 

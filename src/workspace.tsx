@@ -271,7 +271,7 @@ export function Workspace({
   })
   const [blocked, setBlocked] = useState<{ what: string; url: string } | null>(null)
   const open = (what: string, path: string, params: Record<string, string>) => {
-    const url = pageUrl(path, { ...params, project, theme })
+    const url = pageUrl(path, { ...params, project, ...(host.projectId ? { projectId: host.projectId } : {}), theme })
     setBlocked(openPage(url) ? null : { what, url })
   }
 

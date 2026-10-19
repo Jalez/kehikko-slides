@@ -37,6 +37,12 @@ export const PATHS = {
    * POST {@link PointerSaid}: a page saying what it did with one pointing, so the door can tell its caller.
    */
   pointer: '/api/pointer',
+  /**
+   * GET ?project&projectId — where a project is now: `{ project, id, movedFrom }`. For a window of its own (the
+   * presenter, the print view) opened on a path and an id, which asks it again when the folder may have moved.
+   * Refused when the folder is now another project (`projectId` is not its id).
+   */
+  where: '/api/where',
   /** GET ?project&slug — every slide's sources, looked for in their files: {@link CitationsReply}. */
   citations: '/api/citations',
   /** GET ?project&path&from&to — the exact words of a project file between two byte offsets: {@link SourceReply}. */

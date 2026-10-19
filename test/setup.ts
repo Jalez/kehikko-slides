@@ -6,3 +6,8 @@ GlobalRegistrator.register()
 /* The page is a standards-mode document; happy-dom leaves `compatMode` unset,
    which KaTeX reads as quirks mode and warns about on every formula. */
 if (document.compatMode !== 'CSS1Compat') Object.defineProperty(document, 'compatMode', { value: 'CSS1Compat' })
+
+/* The host, for the tests that are not about it: it holds every folder it is asked about. A test of what the
+   host says sets its own (`test/host.ts`) and puts this back. */
+const { holdsEveryFolder } = await import('./host.ts')
+holdsEveryFolder()
