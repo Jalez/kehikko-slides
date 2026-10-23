@@ -11,6 +11,7 @@ import { DeckEditor, type Editor } from '@/editor/deck-editor'
 import { headerOf, type Work } from '@/header'
 import { HeaderMenu } from '@/header-menu'
 import { HistoryDialog } from '@/history'
+import { OpenAddressContext, openerOf } from '@/lib/links'
 import { PictureProject } from '@/slides/markdown'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 import { useKehikot, type Host, type Press } from '@/wire/use-kehikot'
@@ -50,6 +51,9 @@ export function Screen({
   publishDelay?: number
 }) {
   const project = host.projectPath
+  const hostOpens = host.openAddress
+  const hostAnswers = host.answers
+  const openAddress = useMemo(() => openerOf({ answers: hostAnswers, openAddress: hostOpens }), [hostAnswers, hostOpens])
   const [list, setList] = useState<DeckSummary[] | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -245,6 +249,7 @@ export function Screen({
           <FirstDeck onCreate={create} />
         ) : (
           <PictureProject.Provider value={project}>
+            <OpenAddressContext.Provider value={openAddress}>
             <Workspace
               key={`${open}:${generation}`}
               decks={decks}
@@ -260,6 +265,7 @@ export function Screen({
               act={act}
               onState={setState}
             />
+            </OpenAddressContext.Provider>
           </PictureProject.Provider>
         )}
       </main>

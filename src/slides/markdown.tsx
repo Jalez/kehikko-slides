@@ -7,6 +7,7 @@ import remarkMath from 'remark-math'
 import { ask, ticket } from 'kehikot-module-protocol/client'
 import type { PluggableList } from 'unified'
 
+import { OpenAddressContext, handLink, handsLink } from '@/lib/links'
 import { PATHS } from '../../deck/api.ts'
 import { CITE_HREF, CiteMark } from './citations.tsx'
 
@@ -121,8 +122,30 @@ const COMPONENTS: Components = {
     typeof href === 'string' && href.startsWith(CITE_HREF) ? (
       <CiteMark label={href.slice(CITE_HREF.length)} />
     ) : (
-      <a {...rest} href={href} target="_blank" rel="noreferrer" />
+      <SlideLink href={href} {...rest} />
     ),
+}
+
+/**
+ * A link in a slide. An ordinary new-tab link; when the canvas can take the address
+ * (`address.open`, protocol 2.16.0) a press hands it over instead, and the Browser there opens it.
+ */
+function SlideLink({ href, onClick, ...rest }: ComponentProps<'a'>) {
+  const open = useContext(OpenAddressContext)
+  return (
+    <a
+      {...rest}
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => {
+        onClick?.(event)
+        if (event.defaultPrevented || !open || !handsLink(href, open)) return
+        event.preventDefault()
+        void handLink(href, open)
+      }}
+    />
+  )
 }
 
 /**
