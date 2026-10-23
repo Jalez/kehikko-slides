@@ -55,7 +55,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   reacts: ['passage', 'parts'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep'],
+    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep', 'address:open'],
     /* True because this module keeps material and takes writes: the host then
        frames it on its real origin, so its scripts and `/api` calls are plain
        same-origin requests and nothing needs a permissive CORS header that

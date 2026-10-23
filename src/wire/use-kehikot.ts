@@ -31,6 +31,9 @@ export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'pro
   header(items: HeaderItemInput[]): void
   presses: MutableRefObject<Press | null>
   pressed: boolean
+  /** `address.open` (protocol 2.16.0): present with a host that greeted; `answers` says whether it takes addresses. */
+  openAddress?: ProtocolHost['openAddress']
+  answers?: ProtocolHost['answers']
 }
 
 const DRAWN_KEY = 'kehikot.slides.header-drawn'
