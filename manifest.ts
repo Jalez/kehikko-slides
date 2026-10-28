@@ -41,7 +41,10 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     + 'deck’s file, with `page` counted from 1. Every write is kept in the deck’s history and the person can undo it, so give '
     + 'a one-line `summary` and your name as `agent`. Do not edit the .md files directly while the person is editing.',
   entry: '/app',
-  modes: [{ id: 'slides', label: 'Slides', scope: 'epic' }],
+  /* What its content belongs to (protocol 2.29.0): one mode per scope, the default first. */
+  modes: [
+    { id: 'slides', label: 'Slides', scope: 'project', scopeSays: 'the decks in this project, whatever epic is open' },
+  ],
   mcp: {
     url: '/mcp',
     transport: 'http',
