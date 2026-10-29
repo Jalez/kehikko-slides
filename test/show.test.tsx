@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { PointerState } from '../deck/api.ts'
-import { TICKET, answer as door, stream } from '../doors.ts'
+import { TICKET, answer as door, deckStreams as stream } from '../doors.ts'
 import { POINTER } from '../live.ts'
 import { Screen } from '../src/app.tsx'
 import { deckPath, slidePointed, type PassageLike } from '../src/follow.ts'

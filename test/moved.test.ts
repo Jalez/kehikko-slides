@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { DeckChange, PointerState, PresentState } from '../deck/api.ts'
-import { TICKET, stream } from '../doors.ts'
+import { TICKET, deckStreams as stream } from '../doors.ts'
 import { POINTER, SETTLE_MS, followPointer, followTalk, moveTalk, pointAt, poke, watchDecks } from '../live.ts'
 import { createDeck } from '../store.ts'
 import { answer } from './now.ts'

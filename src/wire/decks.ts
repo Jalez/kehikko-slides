@@ -1,4 +1,4 @@
-import { answered, ask, follow } from 'kehikot-module-protocol/client'
+import { answered, ask, follow, subscribe } from 'kehikot-module-protocol/client'
 
 import type {
   CitationsReply,
@@ -54,6 +54,12 @@ export interface Decks {
   pointed(project: string, slug: string, at: number, did: PointerSaid['did'], hidden: boolean): Promise<void>
   /** Every slide's sources, looked for in their files; indexed like the slides. */
   citations(project: string, slug: string): Promise<CitationView[][]>
+  /**
+   * Calls `onChange` when a file the deck's slides cite changed: once as the stream opens (and again
+   * each time it reopens: after a drop, or when the page is shown again), then at every change.
+   * Never on a clock, and closed while the page is hidden. Returns the unsubscribe.
+   */
+  citationsChanged(project: string, slug: string, onChange: () => void): () => void
   /** The exact words of a project file between two byte offsets. */
   source(project: string, path: string, from: number, to: number): Promise<string>
   /**
@@ -131,6 +137,9 @@ export const decks: Decks = {
   },
   async citations(project, slug) {
     return (await get<CitationsReply>('./api/citations', { project, slug })).slides
+  },
+  citationsChanged(project, slug, onChange) {
+    return subscribe('./api/citations/events', () => onChange(), { query: { project, slug }, probe: true })
   },
   async where(project, projectId) {
     const reply = await get<{ project: string }>('./api/where', projectId ? { project, projectId } : { project })
