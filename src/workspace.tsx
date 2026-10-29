@@ -573,10 +573,11 @@ function selectedRange(passage: PassageLike | null | undefined): { path: string;
   return { path: passage.path, from: passage.from, to: passage.to }
 }
 
-/** How often the citations are looked for again while a deck is open: the paper can change under it. */
-const CITATIONS_EVERY_MS = 15_000
-
-/** The open deck's citations as the store finds them, read again on each save, each change on disk, and now and then. */
+/**
+ * The open deck's citations as the store finds them. Read as the store's stream for the deck's cited
+ * files opens (and reopens, when the page is shown again), when one of those files changes, and after
+ * each save and each change on disk to the deck. Never on a clock.
+ */
 function useCitations(decks: Decks, project: string, slug: string, state: SaveState, watched: WatchEvent | null): CitationView[][] | null {
   const [found, setFound] = useState<CitationView[][] | null>(null)
   const look = useCallback(() => {
@@ -584,13 +585,18 @@ function useCitations(decks: Decks, project: string, slug: string, state: SaveSt
       /* An older store without the door, or none at all: the markers are drawn unchecked. */
     })
   }, [decks, project, slug])
+  /* The stream says so once as it opens, so this is also the first read. */
+  useEffect(() => decks.citationsChanged(project, slug, look), [decks, project, slug, look])
+  /* After a save, or the deck changing on disk: what it cites may be other files now. Not on the
+     first render of a deck, which the stream's opening already reads for. */
+  const opened = useRef<typeof look | null>(null)
   useEffect(() => {
+    if (opened.current !== look) {
+      opened.current = look
+      return
+    }
     if (state === 'saved') look()
   }, [state, watched, look])
-  useEffect(() => {
-    const timer = setInterval(look, CITATIONS_EVERY_MS)
-    return () => clearInterval(timer)
-  }, [look])
   return found
 }
 

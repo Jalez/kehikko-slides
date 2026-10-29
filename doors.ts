@@ -2,7 +2,7 @@ import { isAbsolute, relative } from 'node:path'
 
 import { DOOR_PROJECT_SAYS, KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
 
-import { establishBuild, mintTicket, refuseTicket, type Reply } from 'kehikot-module-protocol/serve'
+import { establishBuild, mintTicket, refuseTicket, streams, type Reply, type Stream } from 'kehikot-module-protocol/serve'
 
 import { PATHS, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
 import { addCitation } from './deck/cite.ts'
@@ -16,7 +16,7 @@ import {
   slideRanges,
   type Slide,
 } from './deck/format.ts'
-import { POINTER, POINTER_DID, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
+import { POINTER, POINTER_DID, citedStream, citing, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
 import { resolveFolder, setHostResolve } from './host-ask.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
 import {
@@ -793,7 +793,13 @@ export async function answer(
     return after(done(undo(project, slug, field(body, 'id')), (undone) => ({ version: undone.version })))
   }
 
-  if (path === PATHS.citations && method === 'GET') return done(citations(project, slug), (slides) => ({ slides }))
+  if (path === PATHS.citations && method === 'GET') {
+    const found = citations(project, slug)
+    /* The files found are the ones watched while a page follows this deck (`live.ts`, `citing`). */
+    const root = found.ok ? projectRoot(project) : null
+    if (found.ok && root?.ok) citing(root.value, slug, found.value.flat().map((one) => one.path))
+    return done(found, (slides) => ({ slides }))
+  }
   if (path === PATHS.source && method === 'GET') {
     const number = (name: string) => Number(query.get(name) ?? NaN)
     return done(citedSlice(project, query.get('path') ?? '', number('from'), number('to')), (text) => ({ text }))
@@ -829,7 +835,7 @@ export async function answer(
  * the answer is either a refusal to send instead of opening the stream, or
  * the function to call when the client goes away. `null`: not a stream door.
  */
-export function stream(
+export function deckStreams(
   method: string,
   path: string,
   query: URLSearchParams,
@@ -869,5 +875,12 @@ export function stream(
     },
   }
 }
+
+/**
+ * The doors' one stream option: the deck, talk and pointer streams above, and beside them
+ * `/api/citations/events` (`live.ts`), which tells an open deck that a file it cites changed, so its
+ * page looks for the citations again instead of asking on a clock. The first that answers wins.
+ */
+export const stream: Stream = streams(deckStreams, citedStream)
 
 export { MANIFEST }

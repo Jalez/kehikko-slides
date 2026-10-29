@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import type { CitationView } from '../deck/api.ts'
 import { Screen } from '../src/app.tsx'
@@ -105,5 +105,38 @@ describe('citations in the editor', () => {
     const thumbs = screen.getByRole('navigation', { name: /slides/i })
     expect(thumbs.textContent).not.toContain('[^1]')
     expect(thumbs.querySelector('[data-testid="cite-mark"]')).toBeNull()
+  })
+})
+
+describe('the citations are told, never looked for on a clock', () => {
+  test('read as the stream opens, again when a cited file changes, and no timer of its own', async () => {
+    const realInterval = globalThis.setInterval
+    let intervals = 0
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => (intervals++, realInterval(...args))) as typeof setInterval
+    try {
+      let reads = 0
+      const fake = fakeDecks({ citations: async () => (reads++, [[], [FOUND]]) }, { text: CITED })
+      render(<Screen host={host()} decks={fake.decks} editor={FakeEditor} saveDelay={20} publishDelay={5} />)
+      await act(async () => void (await Promise.resolve()))
+      /* Counted before `waitFor`, which keeps an interval of its own. */
+      expect(intervals).toBe(0)
+      await waitFor(() => expect(editor().value).toBe(CITED))
+      expect(fake.of('citationsChanged')).toEqual([{ method: 'citationsChanged', args: ['/work/thesis', 'defence'] }])
+      const before = reads
+      expect(before).toBeGreaterThan(0)
+
+      /* Nothing changes: nothing is asked. */
+      await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 200))))
+      expect(reads).toBe(before)
+
+      /* The paper a slide cites was edited: the store says so, and the page looks once more. */
+      await fake.cite()
+      expect(reads).toBe(before + 1)
+
+      cleanup()
+      expect(fake.citing()).toBe(0)
+    } finally {
+      globalThis.setInterval = realInterval
+    }
   })
 })

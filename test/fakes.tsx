@@ -99,6 +99,7 @@ export function fakeDecks(
   const listeners: ((event: WatchEvent) => void)[] = []
   const talkers = new Set<(state: PresentState) => void>()
   const pointers = new Set<(state: PointerState) => void>()
+  const citers = new Set<() => void>()
   const disk = { text: start.text ?? DECK, version: (start.version ?? 'v1') as Version }
   let list: DeckSummary[] = start.list ?? [
     { slug: 'defence', title: 'Defence', epic: 'write-chapter-two', slides: 3, updated: 0 },
@@ -168,6 +169,13 @@ export function fakeDecks(
       record('citations', project, slug)
       return []
     },
+    /* As the stream does: once as it opens, then at each change `cite` sends. */
+    citationsChanged(project, slug, onChange) {
+      record('citationsChanged', project, slug)
+      citers.add(onChange)
+      onChange()
+      return () => citers.delete(onChange)
+    },
     async source(project, path, from, to) {
       record('source', project, path, from, to)
       return ''
@@ -189,6 +197,15 @@ export function fakeDecks(
       act(() => talkers.forEach((listen) => listen({ slug: 'defence', ...state }))),
     /** The door saying the deck was pointed at a slide, to every page open on it. */
     point: (index: number, at: number) => act(() => pointers.forEach((listen) => listen({ slug: 'defence', index, at }))),
+    /** The store saying a file the open deck cites changed. */
+    cite: () =>
+      act(async () => {
+        citers.forEach((listen) => listen())
+        /* The read it starts lands inside the act. */
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }),
+    /** How many pages follow the deck's cited files. */
+    citing: () => citers.size,
   }
 }
 
