@@ -20,8 +20,8 @@ afterAll(() => rmSync(home, { recursive: true, force: true }))
 afterEach(() => stopCiting())
 
 const none = new URLSearchParams()
-/* Longer than the settling (50 ms) and a file event's arrival. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 250))
+/* Longer than the settling (100 ms) and a file event's arrival. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 400))
 const CHAPTER = 'Intro.\n\nThe mean rating was highest after the\nvanilla-JavaScript module (3.51).\n'
 
 async function tool(name: string, args: Record<string, unknown>) {
@@ -73,7 +73,8 @@ describe('the cited files stream', () => {
     const { renameSync } = await import('node:fs')
     renameSync(join(dir, 'ch/4.tex.tmp'), join(dir, 'ch/4.tex'))
     await settle()
-    expect(heard.length).toBe(3)
+    /* One save, one piece of news, however many file events it made. */
+    expect(heard).toEqual([CITED_NEWS, CITED_NEWS, CITED_NEWS])
 
     close()
     expect(watching(citedTopic(dir, 'd'))).toBe(0)

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, watch, type FSWatcher } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import { within } from 'kehikot-module-protocol'
@@ -353,17 +353,41 @@ export const CITED_NEWS = { changed: true } as const
 
 export const citedTopic = (root: string, slug: string): string => `cited:${root}\n${slug}`
 
-/* A save in an editor is several file events in one breath: one piece of news. */
-const CITED_SETTLE_MS = 50
+/*
+ * One change is one piece of news. macOS reports one save as several file events, so news is
+ * gathered for a moment and then sent only when the cited files really differ from what was last
+ * told: their sizes and modification times (`citedStamp`). The gathering is one timeout per change.
+ */
+const CITED_SETTLE_MS = 100
 const citedSettling = new Map<string, ReturnType<typeof setTimeout>>()
+const citedTold = new Map<string, string>()
 
-/** Say that a file `topic`'s deck cites changed. Nothing is sent when no page follows it. */
+/** The cited files of `topic`, as sizes and times; a file that is gone is part of it too. */
+function citedStamp(topic: string): string {
+  const parts: string[] = []
+  for (const [folder, one] of [...(cited.get(topic) ?? new Map<string, { names: Set<string> }>())].sort(([a], [b]) => a.localeCompare(b))) {
+    for (const name of [...one.names].sort()) {
+      try {
+        const file = statSync(join(folder, name))
+        parts.push(`${folder}/${name}:${file.size}:${file.mtimeMs}`)
+      } catch {
+        parts.push(`${folder}/${name}:gone`)
+      }
+    }
+  }
+  return parts.join('\n')
+}
+
+/** Say that a file `topic`'s deck cites changed. Nothing is sent when no page follows it, or nothing differs. */
 function citedChanged(topic: string): void {
   if (citedSettling.has(topic) || following(topic) === 0) return
   citedSettling.set(
     topic,
     setTimeout(() => {
       citedSettling.delete(topic)
+      const now = citedStamp(topic)
+      if (citedTold.get(topic) === now) return
+      citedTold.set(topic, now)
       publish(topic, CITED_NEWS)
     }, CITED_SETTLE_MS),
   )
@@ -375,6 +399,7 @@ const cited = new Map<string, Map<string, { names: Set<string>; watcher: FSWatch
 function stopCited(topic: string): void {
   for (const one of cited.get(topic)?.values() ?? []) one.watcher.close()
   cited.delete(topic)
+  citedTold.delete(topic)
 }
 
 /** Where a cited path really is, inside the project; null for one that is not, or cannot be found. */
@@ -446,6 +471,8 @@ export function citing(root: string, slug: string, paths: readonly string[]): vo
   }
   if (held.size) cited.set(topic, held)
   else cited.delete(topic)
+  /* What the page just read is what it has been told. */
+  citedTold.set(topic, citedStamp(topic))
 }
 
 /** How many decks' cited files are watched; for tests. */
