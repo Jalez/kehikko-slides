@@ -13,7 +13,7 @@ import type { Host, Press } from '@/wire/use-kehikot'
 import type { CitationView, WatchEvent } from '../deck/api.ts'
 import { addCitation } from '../deck/cite.ts'
 import type { Cite } from './slides/citations.tsx'
-import { parseDeck, setSection, slideAt, slideHeadline, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
+import { parseDeck, setSection, slideAt, slideHeadline, slideKept, slideRanges, unlinkable, type Deck, type SectionLink } from '../deck/format.ts'
 import { followingLabel, OpenItYourself } from './controls.tsx'
 import { absolute, linkedToReading, passageFor, passageKey, projectRelative, readingOf, samePath, slidePointed, type PassageLike, type Reading } from './follow.ts'
 import { anchorsIn, narrowDeck, nearestShown, positionSaid, stepShown } from './focus.ts'
@@ -45,6 +45,8 @@ export function Workspace({
   project,
   slug,
   watched,
+  reread = 0,
+  settle,
   editor: EditorPane,
   theme,
   saveDelay,
@@ -58,6 +60,10 @@ export function Workspace({
   project: string
   slug: string
   watched: WatchEvent | null
+  /** Counts the times the deck was changed behind the page's back (an undo): read it again, staying on the slide. */
+  reread?: number
+  /** Where this puts its way to write pending typing now. */
+  settle?: MutableRefObject<(() => Promise<boolean>) | null>
   editor: Editor
   theme: 'light' | 'dark'
   saveDelay?: number
@@ -71,6 +77,20 @@ export function Workspace({
 }) {
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
   const text = doc.text ?? ''
+  useEffect(() => {
+    if (!settle) return
+    settle.current = doc.settle
+    return () => {
+      if (settle.current === doc.settle) settle.current = null
+    }
+  }, [settle, doc.settle])
+  const rereadAt = useRef(reread)
+  useEffect(() => {
+    if (rereadAt.current === reread) return
+    rereadAt.current = reread
+    void doc.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reread])
   const [caret, setCaret] = useState(0)
   const [jump, setJump] = useState<{ at: number; nonce: number; focus: boolean } | null>(null)
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')
@@ -93,6 +113,27 @@ export function Workspace({
   const shown = useDeferredValue(text)
   const deck = useMemo<Deck>(() => parseDeck(shown, slug), [shown, slug])
   const current = Math.min(slideAt(text, caret), deck.slides.length - 1)
+
+  /*
+   * New text from outside (an agent, another window, the disk) must not move the reader. The caret is an offset into
+   * the text, so a reload leaves it pointing at whatever now sits there, and the editor remaps it as it swaps the
+   * document (to the start, when the text it was in is replaced). The slide in front is followed through the change
+   * instead (`slideKept`) and the caret put at its start, in the same render, so nothing is drawn or published from
+   * the wrong one. Typing changes the text without a new revision and is left alone.
+   */
+  const [basis, setBasis] = useState<{ revision: number; text: string | null }>({ revision: doc.revision, text: doc.text })
+  if (basis.text !== doc.text || basis.revision !== doc.revision) {
+    setBasis({ revision: doc.revision, text: doc.text })
+    if (basis.revision !== doc.revision && basis.text !== null && doc.text !== null && basis.text !== doc.text) {
+      const kept = slideKept(basis.text, doc.text, slideAt(basis.text, caret))
+      const range = slideRanges(doc.text)[kept]
+      if (range) {
+        const at = firstInk(doc.text, range.from, range.to)
+        setCaret(at)
+        setJump((was) => ({ at, nonce: (was?.nonce ?? 0) + 1, focus: false }))
+      }
+    }
+  }
 
   /*
    * The parts of the epic ticked in the host's bar: the deck narrows to their

@@ -61,6 +61,8 @@ export function Screen({
   const [watched, setWatched] = useState<WatchEvent | null>(null)
   /* Bumped to remount the workspace with what is on disk (after an undo). */
   const [generation, setGeneration] = useState(0)
+  /** The open deck's way to write what is typed; History asks before an undo. */
+  const settle = useRef<(() => Promise<boolean>) | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   /* The one name being asked for, if any: a new deck's, or a new one for the open deck. */
   const [naming, setNaming] = useState<'new' | 'rename' | null>(null)
@@ -234,6 +236,7 @@ export function Screen({
           decks={decks}
           project={project}
           slug={open}
+          beforeUndo={() => settle.current?.() ?? Promise.resolve(true)}
           onUndone={() => setGeneration((n) => n + 1)}
         />
       ) : null}
@@ -251,7 +254,9 @@ export function Screen({
           <PictureProject.Provider value={project}>
             <OpenAddressContext.Provider value={openAddress}>
             <Workspace
-              key={`${open}:${generation}`}
+              key={open}
+              reread={generation}
+              settle={settle}
               decks={decks}
               host={host}
               project={project}

@@ -20,7 +20,11 @@ export interface DeckDoc {
   state: SaveState
   error: string | null
   notice: Notice
+  /** Counts the times text arrived from outside (a reload), never an edit or a save: the first read is 1. */
+  revision: number
   edit(text: string): void
+  /** Write pending edits now. True when nothing typed is left unwritten (safe to replace the text); false when a save was refused or failed. */
+  settle(): Promise<boolean>
   /** Throw away local edits and take what is on disk. */
   reload(): Promise<void>
   /** Write the local text over whatever is on disk. */
@@ -55,6 +59,7 @@ export function useDeck({
   const [state, setState] = useState<SaveState>('loading')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
+  const [revision, setRevision] = useState(0)
 
   /* The truth the async work reads, kept outside render so a late reply sees today's values. */
   const current = useRef<string | null>(null)
@@ -73,6 +78,7 @@ export function useDeck({
     version.current = next.version
     blocked.current = false
     setText(next.text)
+    setRevision((n) => n + 1)
     setNotice(null)
     setState('saved')
     setError(null)
@@ -190,6 +196,13 @@ export function useDeck({
     await load()
   }, [load])
 
+  const settle = useCallback(async () => {
+    /* A save already on its way finishes first; then whatever was typed meanwhile goes. */
+    for (let i = 0; saving.current && i < 100; i++) await new Promise((resolve) => setTimeout(resolve, 20))
+    await flush()
+    return !blocked.current && !dirty()
+  }, [flush])
+
   const overwrite = useCallback(async () => {
     try {
       const there = await decks.read(project, slug)
@@ -203,7 +216,7 @@ export function useDeck({
     }
   }, [decks, project, slug, flush])
 
-  return { text, state, error, notice, edit, reload, overwrite }
+  return { text, state, error, notice, revision, settle, edit, reload, overwrite }
 }
 
 function message(caught: unknown): string {
