@@ -171,6 +171,40 @@ describe('an undo from History', () => {
   })
 })
 
+describe('an undo with typing not yet saved', () => {
+  test('writes the typing first, then undoes, and stays on the slide', async () => {
+    const order: string[] = []
+    const ref: { fake: ReturnType<typeof fakeDecks> | null } = { fake: null }
+    const fake = fakeDecks(
+      {
+        async undo() {
+          order.push(`undo on disk: ${ref.fake?.disk.text.includes('typed') ? 'typing saved' : 'typing lost'}`)
+          if (ref.fake) {
+            ref.fake.disk.text = ref.fake.disk.text.replace('## One', '## One undone')
+            ref.fake.disk.version = 'v9'
+          }
+        },
+      },
+      { history: [{ id: 'h1', slug: 'defence', at: '2026-10-01T10:00:00Z', agent: 'claude', summary: 'an agent edit' }] },
+    )
+    ref.fake = fake
+    fake.disk.text = BASE
+    render(<Screen host={host()} decks={fake.decks} editor={MappingEditor} saveDelay={5000} />)
+    await waitFor(() => expect(position()).toBe('1 / 7'))
+    fireEvent.click(screen.getByRole('button', { name: 'slide 5' }))
+    await waitFor(() => expect(position()).toBe('5 / 7'))
+    fireEvent.change(screen.getByLabelText('deck markdown'), { target: { value: BASE.replace('body of Five', 'body of Five typed') } })
+    expect(fake.of('save')).toHaveLength(0)
+    press('history')
+    fireEvent.click(await screen.findByRole('button', { name: 'undo an agent edit' }))
+    await waitFor(() => expect(order).toEqual(['undo on disk: typing saved']))
+    expect(fake.of('save')).toHaveLength(1)
+    await waitFor(() => expect(position()).toBe('5 / 7'))
+    expect((screen.getByLabelText('deck markdown') as HTMLTextAreaElement).value).toContain('One undone')
+    expect((screen.getByLabelText('deck markdown') as HTMLTextAreaElement).value).toContain('Five typed')
+  })
+})
+
 describe('the presenter window stays too', () => {
   test('through an edit, an add before and a delete before', async () => {
     const fake = fakeDecks({}, { text: BASE })

@@ -17,6 +17,7 @@ export function HistoryDialog({
   decks,
   project,
   slug,
+  beforeUndo,
   onUndone,
 }: {
   open: boolean
@@ -24,6 +25,8 @@ export function HistoryDialog({
   decks: Decks
   project: string
   slug: string
+  /** Called before an undo is asked for: the open deck writes what is typed, so it is in History and the undo applies on top. */
+  beforeUndo?(): Promise<void>
   /** An undo was written: the open deck should be read again. */
   onUndone(): void
 }) {
@@ -49,6 +52,7 @@ export function HistoryDialog({
   const undo = async (id: string) => {
     setBusy(id)
     try {
+      await beforeUndo?.()
       await decks.undo(project, slug, id)
       onUndone()
       await load()

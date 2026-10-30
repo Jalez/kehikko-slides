@@ -46,6 +46,7 @@ export function Workspace({
   slug,
   watched,
   reread = 0,
+  settle,
   editor: EditorPane,
   theme,
   saveDelay,
@@ -61,6 +62,8 @@ export function Workspace({
   watched: WatchEvent | null
   /** Counts the times the deck was changed behind the page's back (an undo): read it again, staying on the slide. */
   reread?: number
+  /** Where this puts its way to write pending typing now. */
+  settle?: MutableRefObject<(() => Promise<void>) | null>
   editor: Editor
   theme: 'light' | 'dark'
   saveDelay?: number
@@ -74,6 +77,13 @@ export function Workspace({
 }) {
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
   const text = doc.text ?? ''
+  useEffect(() => {
+    if (!settle) return
+    settle.current = doc.settle
+    return () => {
+      if (settle.current === doc.settle) settle.current = null
+    }
+  }, [settle, doc.settle])
   const rereadAt = useRef(reread)
   useEffect(() => {
     if (rereadAt.current === reread) return
