@@ -26,7 +26,7 @@ export function HistoryDialog({
   project: string
   slug: string
   /** Called before an undo is asked for: the open deck writes what is typed, so it is in History and the undo applies on top. */
-  beforeUndo?(): Promise<void>
+  beforeUndo?(): Promise<boolean>
   /** An undo was written: the open deck should be read again. */
   onUndone(): void
 }) {
@@ -52,7 +52,10 @@ export function HistoryDialog({
   const undo = async (id: string) => {
     setBusy(id)
     try {
-      await beforeUndo?.()
+      if ((await beforeUndo?.()) === false) {
+        setFailed('What you typed could not be saved, so nothing was undone. Resolve the notice on the deck first.')
+        return
+      }
       await decks.undo(project, slug, id)
       onUndone()
       await load()

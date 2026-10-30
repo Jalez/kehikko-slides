@@ -62,7 +62,7 @@ export function Screen({
   /* Bumped to remount the workspace with what is on disk (after an undo). */
   const [generation, setGeneration] = useState(0)
   /** The open deck's way to write what is typed; History asks before an undo. */
-  const settle = useRef<(() => Promise<void>) | null>(null)
+  const settle = useRef<(() => Promise<boolean>) | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   /* The one name being asked for, if any: a new deck's, or a new one for the open deck. */
   const [naming, setNaming] = useState<'new' | 'rename' | null>(null)
@@ -236,7 +236,7 @@ export function Screen({
           decks={decks}
           project={project}
           slug={open}
-          beforeUndo={() => settle.current?.() ?? Promise.resolve()}
+          beforeUndo={() => settle.current?.() ?? Promise.resolve(true)}
           onUndone={() => setGeneration((n) => n + 1)}
         />
       ) : null}

@@ -205,6 +205,28 @@ describe('an undo with typing not yet saved', () => {
   })
 })
 
+describe('an undo when the typing cannot be saved', () => {
+  test('is not run, and the typing stays under the conflict notice', async () => {
+    const fake = fakeDecks({}, { history: [{ id: 'h1', slug: 'defence', at: '2026-10-01T10:00:00Z', agent: 'claude', summary: 'an agent edit' }] })
+    fake.disk.text = BASE
+    render(<Screen host={host()} decks={fake.decks} editor={MappingEditor} saveDelay={5000} />)
+    await waitFor(() => expect(position()).toBe('1 / 7'))
+    fireEvent.click(screen.getByRole('button', { name: 'slide 5' }))
+    await waitFor(() => expect(position()).toBe('5 / 7'))
+    const typed = BASE.replace('body of Five', 'body of Five typed')
+    fireEvent.change(screen.getByLabelText('deck markdown'), { target: { value: typed } })
+    /* Somebody wrote the deck since we read it: the save will be refused. */
+    fake.disk.text = BASE.replace('body of One', 'body of One by another')
+    fake.disk.version = 'v7'
+    press('history')
+    fireEvent.click(await screen.findByRole('button', { name: 'undo an agent edit' }))
+    await screen.findByText(/nothing was undone/)
+    expect(fake.of('undo')).toHaveLength(0)
+    expect((screen.getByLabelText('deck markdown') as HTMLTextAreaElement).value).toBe(typed)
+    expect(position()).toBe('5 / 7')
+  })
+})
+
 describe('the presenter window stays too', () => {
   test('through an edit, an add before and a delete before', async () => {
     const fake = fakeDecks({}, { text: BASE })
