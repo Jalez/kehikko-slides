@@ -251,7 +251,8 @@ export function Screen({
           <PictureProject.Provider value={project}>
             <OpenAddressContext.Provider value={openAddress}>
             <Workspace
-              key={`${open}:${generation}`}
+              key={open}
+              reread={generation}
               decks={decks}
               host={host}
               project={project}

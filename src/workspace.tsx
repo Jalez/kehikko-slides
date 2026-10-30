@@ -45,6 +45,7 @@ export function Workspace({
   project,
   slug,
   watched,
+  reread = 0,
   editor: EditorPane,
   theme,
   saveDelay,
@@ -58,6 +59,8 @@ export function Workspace({
   project: string
   slug: string
   watched: WatchEvent | null
+  /** Counts the times the deck was changed behind the page's back (an undo): read it again, staying on the slide. */
+  reread?: number
   editor: Editor
   theme: 'light' | 'dark'
   saveDelay?: number
@@ -71,6 +74,13 @@ export function Workspace({
 }) {
   const doc = useDeck({ decks, project, slug, watched, saveDelay })
   const text = doc.text ?? ''
+  const rereadAt = useRef(reread)
+  useEffect(() => {
+    if (rereadAt.current === reread) return
+    rereadAt.current = reread
+    void doc.reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reread])
   const [caret, setCaret] = useState(0)
   const [jump, setJump] = useState<{ at: number; nonce: number; focus: boolean } | null>(null)
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')

@@ -145,6 +145,32 @@ describe('the slide in front stays through a change from outside', () => {
   })
 })
 
+describe('an undo from History', () => {
+  test('stays on the slide, following it through what the undo took away', async () => {
+    const disk: { fake: ReturnType<typeof fakeDecks> | null } = { fake: null }
+    const fake = fakeDecks(
+      {
+        async undo() {
+          if (!disk.fake) return
+          disk.fake.disk.text = deck('One', ...NAMES.slice(2))
+          disk.fake.disk.version = 'v9'
+        },
+      },
+      { history: [{ id: 'h1', slug: 'defence', at: '2026-10-01T10:00:00Z', agent: 'claude', summary: 'add two' }] },
+    )
+    disk.fake = fake
+    fake.disk.text = BASE
+    render(<Screen host={host()} decks={fake.decks} editor={MappingEditor} saveDelay={20} />)
+    await waitFor(() => expect(position()).toBe('1 / 7'))
+    fireEvent.click(screen.getByRole('button', { name: 'slide 5' }))
+    await waitFor(() => expect(position()).toBe('5 / 7'))
+    press('history')
+    fireEvent.click(await screen.findByRole('button', { name: 'undo add two' }))
+    /* One, Three, Four, Five, Six, Seven: Five is fourth. */
+    await waitFor(() => expect(position()).toBe('4 / 6'))
+  })
+})
+
 describe('the presenter window stays too', () => {
   test('through an edit, an add before and a delete before', async () => {
     const fake = fakeDecks({}, { text: BASE })
