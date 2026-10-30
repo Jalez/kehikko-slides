@@ -1,12 +1,12 @@
 import { ChevronLeft, ChevronRight, RotateCcw, Square } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { PictureProject } from '@/slides/markdown'
 import { SlideView } from '@/slides/slide-view'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 
-import { parseDeck } from '../deck/format.ts'
+import { parseDeck, slideKept } from '../deck/format.ts'
 import { useProjectNow } from './project-now.ts'
 import { step, talkKey, useTalk } from './talk.ts'
 
@@ -35,6 +35,7 @@ export function PresenterView({
   const [text, setText] = useState<string | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [at, setAt] = useState<{ index: number; blank: boolean } | null>(null)
+  const shown = useRef<string | null>(null)
   const [started, setStarted] = useState(now)
   const [tick, setTick] = useState(now)
 
@@ -44,7 +45,15 @@ export function PresenterView({
     const load = () =>
       decks
         .read(project, slug)
-        .then((read) => alive && (setText(read.text), setFailed(null)))
+        .then((read) => {
+          if (!alive) return
+          /* The deck changed under the talk: stay on the slide that was in front, not on its number. */
+          const was = shown.current
+          shown.current = read.text
+          if (was !== null && was !== read.text) setAt((place) => (place ? { ...place, index: slideKept(was, read.text, place.index) } : place))
+          setText(read.text)
+          setFailed(null)
+        })
         .catch((caught: unknown) => {
           if (!alive) return
           setFailed(caught instanceof Error ? caught.message : String(caught))

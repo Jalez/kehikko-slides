@@ -148,6 +148,29 @@ export function slideRanges(text: string): SlideRange[] {
   return ranges
 }
 
+/**
+ * Where the slide that was in front is after the deck's text changed under the reader (an agent, another window, the disk).
+ * Slides carry no ids, so they are matched by their text: the slides that did not change at the front and at the back
+ * are anchors. A slide inside the unchanged front keeps its index; one inside the unchanged back moves by what was
+ * added or removed before it; one inside the changed middle (an edited slide, a deleted one) stays at its place in
+ * the middle, or goes to the nearest remaining slide when the middle is gone.
+ */
+export function slideKept(before: string, after: string, index: number): number {
+  const was = slideRanges(before).map((r) => before.slice(r.from, r.to).trim())
+  const now = slideRanges(after).map((r) => after.slice(r.from, r.to).trim())
+  const last = now.length - 1
+  let front = 0
+  while (front < was.length && front < now.length && was[front] === now[front]) front++
+  let back = 0
+  while (back < was.length - front && back < now.length - front && was[was.length - 1 - back] === now[last - back]) back++
+  const at = Math.max(0, Math.min(index, was.length - 1))
+  let to: number
+  if (at < front) to = at
+  else if (at >= was.length - back) to = at + (now.length - was.length)
+  else to = Math.min(at, front + Math.max(0, now.length - back - front - 1))
+  return Math.max(0, Math.min(to, last))
+}
+
 /** Which slide a caret position falls in. */
 export function slideAt(text: string, caret: number): number {
   const ranges = slideRanges(text)

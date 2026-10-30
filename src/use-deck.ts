@@ -20,6 +20,8 @@ export interface DeckDoc {
   state: SaveState
   error: string | null
   notice: Notice
+  /** Counts the times text arrived from outside (a reload), never an edit or a save: the first read is 1. */
+  revision: number
   edit(text: string): void
   /** Throw away local edits and take what is on disk. */
   reload(): Promise<void>
@@ -55,6 +57,7 @@ export function useDeck({
   const [state, setState] = useState<SaveState>('loading')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
+  const [revision, setRevision] = useState(0)
 
   /* The truth the async work reads, kept outside render so a late reply sees today's values. */
   const current = useRef<string | null>(null)
@@ -73,6 +76,7 @@ export function useDeck({
     version.current = next.version
     blocked.current = false
     setText(next.text)
+    setRevision((n) => n + 1)
     setNotice(null)
     setState('saved')
     setError(null)
@@ -203,7 +207,7 @@ export function useDeck({
     }
   }, [decks, project, slug, flush])
 
-  return { text, state, error, notice, edit, reload, overwrite }
+  return { text, state, error, notice, revision, edit, reload, overwrite }
 }
 
 function message(caught: unknown): string {
