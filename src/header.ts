@@ -5,7 +5,9 @@ import { LIMITS, type HeaderItemInput } from 'kehikot-module-protocol'
  *
  * The host draws these as View, Go and Run in the row a container already has, so the page has no
  * strip of its own: the deck switcher, Edit / Preview, following, Present, Presenter view, Export
- * PDF and History are here and none is drawn in the page.
+ * PDF and History are here and none is drawn in the page. Where the page is in the deck is the
+ * footer's when the host draws one (`footer.ts`): the header is how the module is set up, the
+ * footer what is going on now.
  *
  * A pure function of what the page knows. The page declares the list again only when its JSON
  * differs, and the slide headlines are read from the deck AS IT WAS LAST SAVED — so typing declares
@@ -28,6 +30,11 @@ export interface Work {
   /** How many slides the deck has. */
   count: number
   presenting: boolean
+  /** Where the slide in front is, in words (`positionSaid`): `3 / 25`, or its place among the shown. */
+  position: string
+  /** The shown slide before and after the one in front, or null at either end. */
+  before: number | null
+  after: number | null
 }
 
 export interface HeaderState {
@@ -37,6 +44,12 @@ export interface HeaderState {
   work: Work | null
   /** The host draws this header and goes full screen for a run that asks (`drawsHeader === true`): Present says so. */
   surface?: boolean
+  /**
+   * The host draws this page's footer (`drawsFooter === true`): where the page is in the deck — the
+   * slide x of y and the slides to go to — and which deck is on show are the footer's (`footer.ts`),
+   * so the header names neither. With any other host they stay here, as before.
+   */
+  footed?: boolean
 }
 
 /** A label no longer than a label may be, cut with an ellipsis. Never empty. */
@@ -82,12 +95,12 @@ export function headerOf(state: HeaderState): HeaderItemInput[] {
     items.push({
       kind: 'go',
       id: 'deck',
-      label: here ? cut(`Decks · ${here.title}`) : 'Decks',
+      label: here && !state.footed ? cut(`Decks · ${here.title}`) : 'Decks',
       icon: 'presentation',
       options: decks.map((one, i) => ({ id: `d${i}`, label: cut(one.title) })),
     })
   }
-  if (work && work.slides.length) {
+  if (work && work.slides.length && !state.footed) {
     items.push({
       kind: 'go',
       id: 'slide',

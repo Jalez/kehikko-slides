@@ -11,6 +11,9 @@ const work: Work = {
   current: 0,
   count: 2,
   presenting: false,
+  position: '1 / 2',
+  before: null,
+  after: 1,
 }
 const base: HeaderState = { decks: [{ slug: 'a', title: 'A talk' }], open: 'a', work }
 

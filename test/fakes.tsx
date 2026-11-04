@@ -5,7 +5,7 @@ import type { DeckSummary, HistoryEntry, PointerState, PresentState, Version, Wa
 import { Screen } from '../src/app.tsx'
 import type { EditorProps } from '../src/editor/deck-editor.tsx'
 import type { Decks, SaveResult } from '../src/wire/decks.ts'
-import type { HeaderItemInput } from 'kehikot-module-protocol'
+import type { FooterItemInput, HeaderItemInput } from 'kehikot-module-protocol'
 
 import type { Host } from '../src/wire/use-kehikot.ts'
 
@@ -16,7 +16,17 @@ import type { Host } from '../src/wire/use-kehikot.ts'
  * A new host starts both over. `press` is a press as the host relays one: an item's id, and the
  * option's id, the state wanted, or nothing.
  */
-export const wire: { items: HeaderItemInput[]; declared: number; presses: Host['presses'] } = { items: [], declared: 0, presses: { current: null } }
+export const wire: { items: HeaderItemInput[]; declared: number; presses: Host['presses']; footer: FooterItemInput[] | null } = { items: [], declared: 0, presses: { current: null }, footer: null }
+/** A footer item as last declared, or undefined; `wire.footer` is null while nothing was declared. */
+export const footItem = <K extends FooterItemInput['kind']>(id: string) => wire.footer?.find((one) => one.id === id) as Extract<FooterItemInput, { kind: K }> | undefined
+/** A press on a footer item, as the host relays one. */
+export const pressFooter = (id: string, value?: string) => {
+  let said = 'no page takes presses' as string | boolean | void
+  act(() => {
+    said = wire.presses.current ? wire.presses.current({ item: id, place: 'footer', ...(value === undefined ? {} : { value }) }) : said
+  })
+  return said
+}
 export const item = <K extends HeaderItemInput['kind']>(id: string) => wire.items.find((one) => one.id === id) as Extract<HeaderItemInput, { kind: K }> | undefined
 export const press = (id: string, value?: string | boolean) => {
   let said = 'no page takes presses' as string | boolean | void
@@ -41,7 +51,12 @@ export function host(over: Partial<Host> = {}): Host {
   wire.items = []
   wire.declared = 0
   wire.presses = { current: null }
+  wire.footer = null
   return {
+    footer: (items) => {
+      wire.footer = items
+    },
+    drawsFooter: null,
     header: (items) => {
       wire.items = items
       wire.declared += 1
