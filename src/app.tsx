@@ -8,6 +8,7 @@ import { NameForm } from '@/components/menu'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Hint } from '@/controls'
 import { DeckEditor, type Editor } from '@/editor/deck-editor'
+import { footerItems } from '@/footer'
 import { headerOf, type Work } from '@/header'
 import { HeaderMenu } from '@/header-menu'
 import { HistoryDialog } from '@/history'
@@ -32,7 +33,8 @@ export function App() {
  * declared to the host (`header.ts`) and drawn in the container's own header as View, Go and Run;
  * a page no host draws that for has the same items behind one small control in its corner
  * (`header-menu.tsx`). What a menu cannot hold is asked in a dialog: a new deck's name, a new name
- * for this one. Whether the deck is saved is a dot in the corner, and a word where there is room.
+ * for this one. Whether the deck is saved is a dot in the corner, and a word where there is room —
+ * or, with a host that draws the footer, a word in that row beside the slide number (`footer.ts`).
  *
  * Rendered from a plain `Host` and a `Decks` client, so a test draws it with fakes.
  */
@@ -153,9 +155,11 @@ export function Screen({
    * The header: declared whole, and again only when it is a different list. While there is no
    * project or no list there is nothing to offer, and the page says so by declaring none.
    */
+  /* The host draws the footer: where the page is in the deck, the save word and what went wrong are said there, not drawn here. */
+  const footed = host.where === 'hosted' && host.drawsFooter === true
   const items = useMemo(
-    () => (project && list && !cover ? headerOf({ decks: ordered.map((one) => ({ slug: one.slug, title: one.title })), open, work: open ? work : null, surface: host.drawsHeader === true }) : []),
-    [project, list, cover, ordered, open, work, host.drawsHeader],
+    () => (project && list && !cover ? headerOf({ decks: ordered.map((one) => ({ slug: one.slug, title: one.title })), open, work: open ? work : null, surface: host.drawsHeader === true, footed }) : []),
+    [project, list, cover, ordered, open, work, host.drawsHeader, footed],
   )
   const itemsKey = JSON.stringify(items)
   const { header } = host
@@ -163,8 +167,31 @@ export function Screen({
     header(items)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [header, itemsKey])
+  /*
+   * The footer, declared whole and again only when it is a different list, and only to a host that
+   * says it draws one: with any other host nothing is declared and the page draws its own rows.
+   * While the cover is up there is nothing to say, and the list is empty.
+   */
+  const footerSaid = footed
+    ? JSON.stringify(
+        cover
+          ? []
+          : footerItems({
+              work: open ? work : null,
+              deck: here?.title ?? null,
+              save: open && state ? state : null,
+              trouble: failed,
+            }),
+      )
+    : null
+  const { footer } = host
+  useEffect(() => {
+    if (footerSaid !== null) footer(JSON.parse(footerSaid))
+  }, [footerSaid, footer])
   const press: Press = (pressing) => {
     const { item, value } = pressing
+    /* What the footer holds — Previous, Next and the slides to go to — is the open deck's to take. */
+    if (pressing.place === 'footer') return act.current?.(pressing) ?? 'No deck is open here.'
     if (item === 'deck') {
       const to = typeof value === 'string' && value.startsWith('d') ? ordered[Number(value.slice(1))] : undefined
       if (!to) return 'That deck is no longer one of this project’s.'
@@ -208,7 +235,7 @@ export function Screen({
       {/* No strip. The page's own way to the items, only where no host draws them: nobody frames this page, or
           the host says it draws none, or says nothing and has not pressed one yet. */}
       {host.where !== 'hosted' || !(host.drawsHeader ?? host.pressed) ? <HeaderMenu items={items} onPress={press} /> : null}
-      {open && state && !cover ? <SaveWord state={state} /> : null}
+      {open && state && !cover && !footed ? <SaveWord state={state} /> : null}
       <Dialog open={naming !== null} onOpenChange={(now) => !now && setNaming(null)}>
         <DialogContent className="max-w-xs gap-2 p-3">
           <DialogHeader>
@@ -240,7 +267,7 @@ export function Screen({
           onUndone={() => setGeneration((n) => n + 1)}
         />
       ) : null}
-      {failed && cover !== 'down' ? (
+      {failed && cover !== 'down' && !footed ? (
         <p role="alert" className="text-destructive border-b px-3 py-1 text-xs">
           {failed}
         </p>

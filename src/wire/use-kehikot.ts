@@ -1,13 +1,13 @@
 import { useRef, useState, type MutableRefObject } from 'react'
 
-import type { HeaderItemInput } from 'kehikot-module-protocol'
+import type { FooterItemInput, HeaderItemInput } from 'kehikot-module-protocol'
 import { useHost, type Host as ProtocolHost } from 'kehikot-module-protocol/client/react'
 
 import type { PassageLike } from '../follow.ts'
 import { ID } from '../../manifest.ts'
 
-/** One press on a header item: nothing or `true` for "taken", a sentence for "not taken, and why". */
-export type Press = (press: { item: string; value?: string | boolean }) => string | boolean | void
+/** One press on a header item, or a footer item (`place: 'footer'`): nothing or `true` for "taken", a sentence for "not taken, and why". */
+export type Press = (press: { item: string; value?: string | boolean; place?: 'header' | 'footer' }) => string | boolean | void
 
 /**
  * What the screen needs from the host. The protocol's `useHost` has already put the theme on
@@ -23,12 +23,18 @@ export type Press = (press: { item: string; value?: string | boolean }) => strin
  * (`kehikot.header`); `presses` is where the screen puts what takes a press on one; `pressed` is
  * whether a host has ever sent one — which only a host that draws the header does. `drawsHeader` is the host's
  * own word for it (1.4.0): `true`, `false`, or `null` from a host that does not say, and then `pressed` decides.
+ * `footer` and `drawsFooter` are the same for the row at the bottom (2.38.0), with no fallback: a host that
+ * does not say it draws a footer is told none, and the page draws its own.
  */
 export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'projectId' | 'epic' | 'theme' | 'parts' | 'request'> & {
   /** Whether the host draws this page's header: its greeting says (1.4.0), `null` from one that does not. */
   drawsHeader: boolean | null
   passage: PassageLike | null
   header(items: HeaderItemInput[]): void
+  /** Whether the host draws this page's footer: its greeting says (2.38.0), `null` from one that does not. */
+  drawsFooter: boolean | null
+  /** Declares the footer for the host to draw (`kehikot.footer`); only when `drawsFooter` is true. */
+  footer(items: FooterItemInput[]): void
   presses: MutableRefObject<Press | null>
   pressed: boolean
   /** `address.open` (protocol 2.16.0): present with a host that greeted; `answers` says whether it takes addresses. */

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { Screen, byEpic } from '../src/app.tsx'
-import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, following, host, item, jumps, pause, press, preview, type, wire } from './fakes.tsx'
+import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, following, footItem, host, item, jumps, pause, press, pressFooter, preview, type, wire } from './fakes.tsx'
 
 afterEach(cleanup)
 
@@ -399,6 +399,52 @@ describe('the header the host draws', () => {
       const view = render(<Screen host={host({ drawsHeader })} decks={fake.decks} editor={FakeEditor} saveDelay={20} />)
       await waitFor(() => expect(item('present')).toBeDefined())
       expect((item('present') as { surface?: string }).surface).toBe(surface)
+      view.unmount()
+    }
+  })
+})
+
+describe('the footer the host draws', () => {
+  test('a host that draws the footer is told the slide x of y, the save word and the deck, and the page draws none of them', async () => {
+    const fake = fakeDecks()
+    draw(fake, { drawsHeader: true, drawsFooter: true })
+    await waitFor(() => expect(footItem<'text'>('position')?.text).toBe('1 / 3'))
+    expect(footItem<'text'>('save')?.text).toBe('saved')
+    expect(footItem<'text'>('shown')?.text).toBe('Defence')
+    expect(footItem<'run'>('previous')?.disabled).toBe('This is the first slide shown.')
+    expect(screen.queryByTestId('position')).toBeNull()
+    expect(screen.queryByTestId('save-state')).toBeNull()
+    expect(screen.queryByLabelText('next slide')).toBeNull()
+    /* The header neither counts the slides nor names the deck: that is the footer's. */
+    expect(item('slide')).toBeUndefined()
+    expect(item<'go'>('deck')?.label).toBe('Decks')
+  })
+
+  test('Next and Previous in the footer step the slides, and the slides to go to are there', async () => {
+    const fake = fakeDecks()
+    draw(fake, { drawsHeader: true, drawsFooter: true })
+    await waitFor(() => expect(footItem<'text'>('position')?.text).toBe('1 / 3'))
+    expect(pressFooter('next')).toBe(true)
+    await waitFor(() => expect(footItem<'text'>('position')?.text).toBe('2 / 3'))
+    pressFooter('next')
+    await waitFor(() => expect(footItem<'run'>('next')?.disabled).toBe('This is the last slide shown.'))
+    expect(pressFooter('next')).toBe('This is the last slide shown.')
+    pressFooter('previous')
+    await waitFor(() => expect(footItem<'text'>('position')?.text).toBe('2 / 3'))
+    pressFooter('slide', 's0')
+    await waitFor(() => expect(footItem<'text'>('position')?.text).toBe('1 / 3'))
+    /* A footer item is not the header's: a header press of Next is not taken. */
+    expect(typeof press('next')).toBe('string')
+  })
+
+  test('a host that does not say it draws the footer is told none, and the page draws its own row as before', async () => {
+    for (const drawsFooter of [false, null] as const) {
+      const fake = fakeDecks()
+      const view = draw(fake, { drawsHeader: true, drawsFooter })
+      await waitFor(() => expect(screen.getByTestId('position').textContent).toBe('1 / 3'))
+      expect(wire.footer).toBeNull()
+      expect(item<'go'>('slide')?.label).toBe('Slide 1 of 3')
+      expect(item<'go'>('deck')?.label).toBe('Decks · Defence')
       view.unmount()
     }
   })

@@ -350,6 +350,7 @@ export function Workspace({
     }
   }
 
+  const footed = host.where === 'hosted' && host.drawsFooter === true
   const before = stepShown(listed, current, -1)
   const after = stepShown(listed, current, 1)
   const reading = readingOf(host.passage)
@@ -380,8 +381,11 @@ export function Workspace({
             current: front === null ? null : Math.min(front, Math.max(0, headlines.length - 1)),
             count: headlines.length,
             presenting,
+            position: positionSaid(narrowing, front === null ? null : Math.min(front, Math.max(0, headlines.length - 1)), headlines.length),
+            before,
+            after,
           },
-    [saved, tab, following, presenting, followed.missing, followed.aside, listed, headlines, front],
+    [saved, tab, following, presenting, followed.missing, followed.aside, listed, headlines, front, narrowing, before, after],
   )
   const workKey = JSON.stringify(work)
   useEffect(() => {
@@ -390,7 +394,17 @@ export function Workspace({
   }, [workKey, onWork])
   useEffect(() => () => onWork(null), [onWork])
 
-  act.current = ({ item, value }) => {
+  act.current = ({ item, value, place }) => {
+    /* Previous and Next sit beside the slide number in the footer the host draws, and step the shown slides as the
+       page's own arrows do; the keyboard is left where it is. A talk is stepped with its own keys. */
+    if (item === 'previous' || item === 'next') {
+      if (place !== 'footer') return undefined
+      if (presenting) return 'A talk is being given: step it with its own keys.'
+      const to = item === 'previous' ? before : after
+      if (to === null) return item === 'previous' ? 'This is the first slide shown.' : 'This is the last slide shown.'
+      goTo(to)
+      return true
+    }
     if (item === 'mode') setTab(value === 'preview' ? 'preview' : 'edit')
     else if (item === 'following') setFollowing(value === true)
     else if (item === 'slide') {
@@ -541,6 +555,8 @@ export function Workspace({
               {citeTrouble}
             </p>
           ) : null}
+          {/* With a host that draws the footer, the slide number and its arrows are there (`footer.ts`), not here. */}
+          {footed ? null : (
           <div className="text-muted-foreground flex items-center justify-center gap-1 pb-2 text-[11px] tabular-nums">
             <Button
               variant="ghost"
@@ -564,6 +580,7 @@ export function Workspace({
               <ChevronRight className="size-3.5" />
             </Button>
           </div>
+          )}
         </section>
       </div>
     </div>
