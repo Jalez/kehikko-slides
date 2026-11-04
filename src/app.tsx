@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { Cover, coverFor, useServerStanding, type CoverState } from 'kehikot-module-protocol/client/react'
+import { Cover, coverFor, useKept, useServerStanding, type CoverState } from 'kehikot-module-protocol/client/react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,7 +15,7 @@ import { HistoryDialog } from '@/history'
 import { OpenAddressContext, openerOf } from '@/lib/links'
 import { PictureProject } from '@/slides/markdown'
 import { decks as realDecks, type Decks } from '@/wire/decks'
-import { useKehikot, type Host, type Press } from '@/wire/use-kehikot'
+import { useKeeps, useKehikot, type Host, type Press } from '@/wire/use-kehikot'
 import { Workspace } from '@/workspace'
 
 import type { DeckSummary, WatchEvent } from '../deck/api.ts'
@@ -58,7 +58,10 @@ export function Screen({
   const openAddress = useMemo(() => openerOf({ answers: hostAnswers, openAddress: hostOpens }), [hostAnswers, hostOpens])
   const [list, setList] = useState<DeckSummary[] | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
+  /* Kept per container (protocol 2.51.0): the deck this container shows is a way of looking at the
+     project's decks, so it is back after a restart. The decks themselves are files on disk. */
+  const keeps = useKeeps(host)
+  const [open, setOpen] = useKept<string | null>(keeps, 'deck', null, (value) => value === null || typeof value === 'string')
   const [state, setState] = useState<SaveState | null>(null)
   const [watched, setWatched] = useState<WatchEvent | null>(null)
   /* Bumped to remount the workspace with what is on disk (after an undo). */
@@ -84,8 +87,9 @@ export function Screen({
   }, [decks, project])
 
   useEffect(() => {
+    /* The open deck stays: it is kept for this container, and one that is not in this project's list
+       is replaced by the first below. */
     setList(null)
-    setOpen(null)
     if (!project) return
     void refresh()
     return decks.watch(project, (event) => {
@@ -99,21 +103,29 @@ export function Screen({
 
   /* Keep something open: the open deck while it exists, else the first in order. */
   useEffect(() => {
-    if (!list) return
+    /* A list that could not be read is no reason to forget the kept deck. */
+    if (!list || (failed && !list.length)) return
     if (open && list.some((one) => one.slug === open)) return
     setOpen(ordered[0]?.slug ?? null)
-  }, [list, ordered, open])
+  }, [list, ordered, open, failed, setOpen])
 
   /* Follow the epic: when the host turns to another, open that epic's first
      deck. One with no deck leaves the open deck in place, and a deck picked by
      hand stays until the epic changes again. */
-  const followed = useRef(host.epic)
+  /* Undefined until the first list: the epic the page arrives on is not a turn, so a kept deck is not
+     replaced by that epic's first. */
+  const followed = useRef<string | null | undefined>(undefined)
   useEffect(() => {
-    if (!list || followed.current === host.epic) return
+    if (!list) return
+    if (followed.current === undefined) {
+      followed.current = host.epic
+      return
+    }
+    if (followed.current === host.epic) return
     followed.current = host.epic
     const first = ordered[0]
     if (first && host.epic !== null && first.epic === host.epic) setOpen(first.slug)
-  }, [list, ordered, host.epic])
+  }, [list, ordered, host.epic, setOpen])
 
   const create = async (title: string) => {
     if (!project) return false
@@ -286,6 +298,7 @@ export function Screen({
               settle={settle}
               decks={decks}
               host={host}
+              keeps={keeps}
               project={project}
               slug={open}
               watched={watched}

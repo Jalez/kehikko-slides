@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 
-import { useFocus } from 'kehikot-module-protocol/client/react'
+import { useFocus, useKept, type KeepsFor } from 'kehikot-module-protocol/client/react'
 
 import { Button } from '@/components/ui/button'
 import type { Editor } from '@/editor/deck-editor'
@@ -42,6 +42,7 @@ import { useFollowing } from './use-following.ts'
 export function Workspace({
   decks,
   host,
+  keeps,
   project,
   slug,
   watched,
@@ -57,6 +58,8 @@ export function Workspace({
 }: {
   decks: Decks
   host: Host
+  /** Where the container's view is kept (`useKeeps`): the pane and following, the same for every deck. */
+  keeps: KeepsFor
   project: string
   slug: string
   watched: WatchEvent | null
@@ -93,7 +96,8 @@ export function Workspace({
   }, [reread])
   const [caret, setCaret] = useState(0)
   const [jump, setJump] = useState<{ at: number; nonce: number; focus: boolean } | null>(null)
-  const [tab, setTab] = useState<'edit' | 'preview'>('edit')
+  /* Kept per container (protocol 2.51.0), under the header item's own id: back after a restart. */
+  const [tab, setTab] = useKept<'edit' | 'preview'>(keeps, 'mode', 'edit', (value) => value === 'edit' || value === 'preview')
 
   /*
    * The header's save word is the parent's copy of `doc.state`, and it has to land in the SAME
@@ -185,7 +189,7 @@ export function Workspace({
       if (to !== undefined) goTo(to, true)
     },
   })
-  const [following, setFollowing] = useState(true)
+  const [following, setFollowing] = useKept(keeps, 'following', true)
   const followed = useFollowing({
     host,
     project,
