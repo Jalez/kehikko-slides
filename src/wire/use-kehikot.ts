@@ -1,7 +1,7 @@
 import { useRef, useState, type MutableRefObject } from 'react'
 
 import type { FooterItemInput, HeaderItemInput } from 'kehikot-module-protocol'
-import { useHost, type Host as ProtocolHost } from 'kehikot-module-protocol/client/react'
+import { useHost, type Host as ProtocolHost, type KeepsFor } from 'kehikot-module-protocol/client/react'
 
 import type { PassageLike } from '../follow.ts'
 import { ID } from '../../manifest.ts'
@@ -26,7 +26,7 @@ export type Press = (press: { item: string; value?: string | boolean; place?: 'h
  * `footer` and `drawsFooter` are the same for the row at the bottom (2.38.0), with no fallback: a host that
  * does not say it draws a footer is told none, and the page draws its own.
  */
-export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'projectId' | 'epic' | 'theme' | 'parts' | 'request'> & {
+export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'projectId' | 'epic' | 'theme' | 'parts' | 'request'> & Partial<KeepsFor> & {
   /** Whether the host draws this page's header: its greeting says (1.4.0), `null` from one that does not. */
   drawsHeader: boolean | null
   passage: PassageLike | null
@@ -69,4 +69,24 @@ export function useKehikot(): Host {
   })
   /* The same object the protocol hands back, with three more fields: a screen reads it as one thing. */
   return Object.assign(host, { presses, pressed })
+}
+
+/**
+ * Where the container's view is kept (protocol 2.51.0): the host's kept state, one key per field,
+ * per container and across restarts. A plain test host without `kept`/`read`/`remember` keeps it in
+ * the component instead, as `useState` did; the protocol's `useHost` always has all three.
+ */
+export function useKeeps(host: Host): KeepsFor {
+  const [local, setLocal] = useState<unknown>(null)
+  const latest = useRef(local)
+  latest.current = local
+  if (host.read && host.remember) return host as KeepsFor
+  return {
+    kept: local,
+    read: () => ({ kept: latest.current }),
+    remember: (next: never) => {
+      latest.current = next
+      setLocal(next)
+    },
+  }
 }
