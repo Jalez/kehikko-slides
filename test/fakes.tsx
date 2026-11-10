@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useEffect, useRef } from 'react'
 
-import type { DeckSummary, HistoryEntry, PointerState, PresentState, Version, WatchEvent } from '../deck/api.ts'
+import type { DeckSummary, HistoryEntry, PointerState, PresentState, ProposalView, Version, WatchEvent } from '../deck/api.ts'
 import { Screen } from '../src/app.tsx'
 import type { EditorProps } from '../src/editor/deck-editor.tsx'
 import type { Decks, SaveResult } from '../src/wire/decks.ts'
@@ -113,7 +113,7 @@ interface Call {
 /** An in-memory `Decks`: records every call; `watch` hands back an `emit`. */
 export function fakeDecks(
   over: Partial<Decks> = {},
-  start: { list?: DeckSummary[]; text?: string; version?: Version; history?: HistoryEntry[] } = {},
+  start: { list?: DeckSummary[]; text?: string; version?: Version; history?: HistoryEntry[]; proposals?: ProposalView[] } = {},
 ) {
   const calls: Call[] = []
   const listeners: ((event: WatchEvent) => void)[] = []
@@ -125,6 +125,8 @@ export function fakeDecks(
     { slug: 'defence', title: 'Defence', epic: 'write-chapter-two', slides: 3, updated: 0 },
   ]
   const record = (method: string, ...args: unknown[]) => calls.push({ method, args })
+  /** The proposals the fake door holds open; a screen test puts some in. */
+  const proposed: { open: ProposalView[] } = { open: start.proposals ?? [] }
 
   const decks: Decks = {
     async list(project) {
@@ -204,12 +206,24 @@ export function fakeDecks(
       record('where', project, projectId)
       return { project }
     },
+    async proposals(project, slug) {
+      record('proposals', project, slug)
+      return { proposals: proposed.open, settled: [] }
+    },
+    async answerProposal(answer) {
+      record('answerProposal', answer)
+      const one = proposed.open.find((p) => p.id === answer.id)
+      if (!one) throw new Error('There is no proposal by that id here.')
+      proposed.open = proposed.open.filter((p) => p.id !== answer.id)
+      return { ...one, status: answer.decision === 'accept' ? 'accepted' : 'declined', decidedBy: 'person', decidedAt: 1, ...(answer.reason ? { declinedReason: answer.reason } : {}) }
+    },
     ...over,
   }
   return {
     decks,
     calls,
     disk,
+    proposed,
     of: (method: string) => calls.filter((call) => call.method === method),
     emit: (event: WatchEvent) => act(() => listeners.forEach((listen) => listen(event))),
     /** The server saying where the talk is, to every window following it. */

@@ -35,6 +35,8 @@ export interface Work {
   /** The shown slide before and after the one in front, or null at either end. */
   before: number | null
   after: number | null
+  /** The proposed changes to the deck as the page walks them: how many are open, which is current (1-based), whether Next found no more. Optional for older callers. */
+  proposals?: { open: number; at: number | null; noMore: boolean }
 }
 
 export interface HeaderState {

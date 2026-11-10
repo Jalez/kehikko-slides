@@ -2,6 +2,8 @@ import { ChevronLeft, ChevronRight, Link2, Quote } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 
 import { useFocus, useKept, type KeepsFor } from 'kehikot-module-protocol/client/react'
+import { ProposalView, useProposalWalk } from 'kehikot-module-protocol/client/proposals'
+import type { ShownProposal } from 'kehikot-module-protocol/proposals'
 
 import { Button } from '@/components/ui/button'
 import type { Editor } from '@/editor/deck-editor'
@@ -354,6 +356,40 @@ export function Workspace({
     }
   }
 
+  /*
+   * The proposed changes to this deck (protocol 2.71.0): read when the deck opens, whenever the
+   * watch says a deck changed — the door says so for a proposal filed or answered too (`tellDeck`),
+   * so never on a clock — and after an answer. An accepted one is written to the deck, which the
+   * watch then reloads here like any other agent write.
+   */
+  const [proposals, setProposals] = useState<ShownProposal[]>([])
+  const [proposalSaid, setProposalSaid] = useState<Record<string, string>>({})
+  const [answering, setAnswering] = useState<string | null>(null)
+  const readProposals = useCallback(async () => {
+    try {
+      const read = await decks.proposals(project, slug)
+      setProposals(read.proposals)
+    } catch {
+      /* The door will be asked again on the next tick. */
+    }
+  }, [decks, project, slug])
+  useEffect(() => {
+    void readProposals()
+  }, [readProposals, watched, reread])
+  const walk = useProposalWalk(proposals)
+  const answerProposal = async (id: string, answer: { decision: 'accept' | 'decline'; reason?: string; final?: string; hunks?: number[] }) => {
+    setAnswering(id)
+    try {
+      const settled = await decks.answerProposal({ project, id, ...answer })
+      setProposalSaid((now) => ({ ...now, [id]: settled.status === 'accepted' ? 'Accepted and written to the deck.' : 'Declined.' }))
+    } catch (e) {
+      setProposalSaid((now) => ({ ...now, [id]: e instanceof Error ? e.message : String(e) }))
+    } finally {
+      setAnswering(null)
+      await readProposals()
+    }
+  }
+
   const footed = host.where === 'hosted' && host.drawsFooter === true
   const before = stepShown(listed, current, -1)
   const after = stepShown(listed, current, 1)
@@ -388,8 +424,9 @@ export function Workspace({
             position: positionSaid(narrowing, front === null ? null : Math.min(front, Math.max(0, headlines.length - 1)), headlines.length),
             before,
             after,
+            proposals: { open: walk.open.length, at: walk.at, noMore: walk.noMore },
           },
-    [saved, tab, following, presenting, followed.missing, followed.aside, listed, headlines, front, narrowing, before, after],
+    [saved, tab, following, presenting, followed.missing, followed.aside, listed, headlines, front, narrowing, before, after, walk.open.length, walk.at, walk.noMore],
   )
   const workKey = JSON.stringify(work)
   useEffect(() => {
@@ -399,6 +436,9 @@ export function Workspace({
   useEffect(() => () => onWork(null), [onWork])
 
   act.current = ({ item, value, place }) => {
+    /* Previous and Next proposal sit beside the count in the footer: the walk takes them. */
+    const walked = walk.press(item)
+    if (walked !== null) return walked
     /* Previous and Next sit beside the slide number in the footer the host draws, and step the shown slides as the
        page's own arrows do; the keyboard is left where it is. A talk is stepped with its own keys. */
     if (item === 'previous' || item === 'next') {
@@ -481,6 +521,22 @@ export function Workspace({
             Keep mine
           </Button>
         </div>
+      ) : null}
+
+      {walk.open.length ? (
+        <section aria-label="proposed changes" className="max-h-[45%] shrink-0 overflow-y-auto border-b px-3 py-1">
+          {walk.open.map((one) => (
+            <ProposalView
+              key={one.id}
+              proposal={one}
+              current={one.id === walk.current}
+              busy={answering === one.id}
+              said={proposalSaid[one.id] ?? null}
+              onAccept={(take) => void answerProposal(one.id, { decision: 'accept', ...take })}
+              onDecline={(reason) => void answerProposal(one.id, { decision: 'decline', reason })}
+            />
+          ))}
+        </section>
       ) : null}
 
       <div className="flex min-h-0 flex-1">

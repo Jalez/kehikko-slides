@@ -154,13 +154,17 @@ describe('the MCP door', () => {
       'link_slide',
       'cite_slide',
       'show_slide',
+      'propose_change',
+      'list_proposals',
+      'read_proposal',
+      'withdraw_proposal',
     ])
   })
 
   test('every tool says whether it only reads, and which writes replace what was there', async () => {
     const tools = ((await rpc('tools/list')).result?.tools ?? []) as unknown as { name: string; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean } }[]
     expect(tools.every((one) => typeof one.annotations?.readOnlyHint === 'boolean' && typeof one.annotations.destructiveHint === 'boolean')).toBe(true)
-    expect(tools.filter((one) => one.annotations!.readOnlyHint).map((one) => one.name)).toEqual(['list_decks', 'read_deck', 'show_slide'])
+    expect(tools.filter((one) => one.annotations!.readOnlyHint).map((one) => one.name)).toEqual(['list_decks', 'read_deck', 'show_slide', 'list_proposals', 'read_proposal'])
     expect(tools.filter((one) => one.annotations!.destructiveHint).map((one) => one.name)).toEqual(['write_deck', 'edit_slide'])
   })
 

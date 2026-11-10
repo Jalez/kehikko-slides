@@ -172,6 +172,22 @@ export function poke(project: string): void {
   settle(group)
 }
 
+/**
+ * Say something ABOUT a deck changed that is not the deck's text — a proposal filed or answered
+ * (`proposals.ts`) — to every page watching the project: the deck's event, at the version it is
+ * at, which a page open on it re-reads its proposals on and does not reload the deck for. Nothing
+ * is said of a deck not seen yet, or to nobody.
+ */
+export function tellDeck(project: string, slug: string): void {
+  const dir = slidesDir(project, false)
+  if (!dir.ok) return
+  const group = groups.get(keyOf(dir.value.root))
+  if (!group) return
+  const version = group.known.get(slug)
+  if (version === undefined) return
+  for (const listener of group.listeners) listener({ slug, version })
+}
+
 /** How many projects are being watched; for tests. */
 export function watching(): number {
   return groups.size

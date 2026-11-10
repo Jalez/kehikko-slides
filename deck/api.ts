@@ -8,6 +8,7 @@
  */
 
 import type { CitationView } from 'kehikot-module-protocol'
+import type { ShownProposal } from 'kehikot-module-protocol/proposals'
 
 /** What a deck's file name may be: `<slug>.md` under `.kehikot/slides/`. */
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,79}$/
@@ -52,6 +53,10 @@ export const PATHS = {
    * the page's ticket, in the address because an `<img>` sends no header.
    */
   asset: '/api/asset',
+  /** GET ?project&slug — the proposed changes to a deck, open ones measured against it and the recent settled ones: {@link ProposalsReply}. */
+  proposals: '/api/proposals',
+  /** POST {@link AnswerProposal} — accept or decline one. */
+  proposal: '/api/proposal',
 } as const
 
 export interface Refusal {
@@ -135,6 +140,27 @@ export interface Done {
 }
 
 /** One agent write, as the history list shows it (the previous text is kept on disk, not sent). */
+/** A proposed change as the page sees it (protocol 2.71.0, `kehikot-module-protocol/proposals`). */
+export type { ShownProposal as ProposalView } from 'kehikot-module-protocol/proposals'
+
+export interface ProposalsReply {
+  ok: true
+  /** Pending and stale, oldest first. */
+  proposals: ShownProposal[]
+  /** What became of recent ones, newest first. */
+  settled: ShownProposal[]
+}
+
+/** The person's answer to one proposal. Accept takes `final` (their own text) or `hunks` (the indexes to take) or neither. */
+export interface AnswerProposal {
+  project: string
+  id: string
+  decision: 'accept' | 'decline'
+  reason?: string
+  final?: string
+  hunks?: number[]
+}
+
 export interface HistoryEntry {
   id: string
   slug: string

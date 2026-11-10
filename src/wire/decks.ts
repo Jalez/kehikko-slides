@@ -10,6 +10,9 @@ import type {
   HistoryReply,
   ListDecksReply,
   PointerSaid,
+  ProposalsReply,
+  ProposalView,
+  AnswerProposal,
   PointerState,
   PresentState,
   ReadDeckReply,
@@ -69,6 +72,10 @@ export interface Decks {
    * nothing answered.
    */
   where(project: string, projectId: string | null): Promise<{ project: string }>
+  /** The proposed changes to a deck: open ones, measured against it now, and the recent settled ones. */
+  proposals(project: string, slug: string): Promise<{ proposals: ProposalView[]; settled: ProposalView[] }>
+  /** Accept (as proposed, with `final`, or the `hunks` chosen) or decline (with a `reason`) one proposal. */
+  answerProposal(answer: AnswerProposal): Promise<ProposalView>
 }
 
 /* The reads carry the ticket too: the doors under /api/ answer only this app's own page. */
@@ -140,6 +147,13 @@ export const decks: Decks = {
   },
   citationsChanged(project, slug, onChange) {
     return subscribe('./api/citations/events', () => onChange(), { query: { project, slug }, probe: true })
+  },
+  async proposals(project, slug) {
+    const reply = await get<ProposalsReply>('./api/proposals', { project, slug })
+    return { proposals: reply.proposals, settled: reply.settled }
+  },
+  async answerProposal(answer) {
+    return (await send<{ proposal: ProposalView }>('POST', './api/proposal', answer)).proposal
   },
   async where(project, projectId) {
     const reply = await get<{ project: string }>('./api/where', projectId ? { project, projectId } : { project })
