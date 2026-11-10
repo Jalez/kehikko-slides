@@ -46,7 +46,8 @@ test('the open deck, the pane and following come back from what the host kept', 
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
   await waitFor(() => expect(openDeck()).toBe('Another talk'))
   await waitFor(() => expect(pane()).toBe('preview'))
-  expect(item<'toggle'>('following')?.checked).toBe(false)
+  // The header is declared after the pane is drawn (a later effect, later still on a slow runner), so wait for it too.
+  await waitFor(() => expect(item<'toggle'>('following')?.checked).toBe(false))
 })
 
 test('nothing kept: the open epic’s first deck, the editor, following', async () => {
@@ -54,7 +55,7 @@ test('nothing kept: the open epic’s first deck, the editor, following', async 
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
   await waitFor(() => expect(openDeck()).toBe('Defence'))
   await waitFor(() => expect(pane()).toBe('edit'))
-  expect(item<'toggle'>('following')?.checked).toBe(true)
+  await waitFor(() => expect(item<'toggle'>('following')?.checked).toBe(true))
 })
 
 test('presses write the deck, the pane and following back, keeping what else was kept', async () => {
