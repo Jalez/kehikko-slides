@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* The protocol's client components (shadcn/ui, vendored once there) draw with this module's theme: Tailwind reads them. */
+@source "../node_modules/kehikot-module-protocol/dist/client";
 
 /*
  * shadcn's tokens at shadcn's names, neutral, in two palettes. The host's theme
