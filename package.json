@@ -27,7 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "katex": "0.16.47",
-    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#112debbe9063f019e2fe77b65f420215003765e6",
+    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#v2.72.0",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
