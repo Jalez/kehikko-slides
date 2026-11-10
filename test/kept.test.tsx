@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 
 import { Screen } from '../src/app.tsx'
 import type { Host } from '../src/wire/use-kehikot.ts'
-import { FakeEditor, fakeDecks, host, item, pane, press } from './fakes.tsx'
+import { FakeEditor, fakeDecks, host, item, openDeck, pane, press } from './fakes.tsx'
 
 /**
  * What the container keeps (protocol 2.51.0): the open deck, the pane and following come back from
@@ -44,7 +44,7 @@ function keeping(start: unknown) {
 test('the open deck, the pane and following come back from what the host kept', async () => {
   const { Kept } = keeping({ deck: 'other', mode: 'preview', following: false })
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
-  await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Another talk'))
+  await waitFor(() => expect(openDeck()).toBe('Another talk'))
   await waitFor(() => expect(pane()).toBe('preview'))
   expect(item<'toggle'>('following')?.checked).toBe(false)
 })
@@ -52,7 +52,7 @@ test('the open deck, the pane and following come back from what the host kept', 
 test('nothing kept: the open epic’s first deck, the editor, following', async () => {
   const { Kept } = keeping(null)
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
-  await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Defence'))
+  await waitFor(() => expect(openDeck()).toBe('Defence'))
   await waitFor(() => expect(pane()).toBe('edit'))
   expect(item<'toggle'>('following')?.checked).toBe(true)
 })
@@ -60,9 +60,9 @@ test('nothing kept: the open epic’s first deck, the editor, following', async 
 test('presses write the deck, the pane and following back, keeping what else was kept', async () => {
   const { Kept, remembered } = keeping({ other: 1 })
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
-  await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Defence'))
+  await waitFor(() => expect(openDeck()).toBe('Defence'))
   press('deck', 'd1')
-  await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Another talk'))
+  await waitFor(() => expect(openDeck()).toBe('Another talk'))
   await waitFor(() => expect(item('mode')).toBeDefined())
   press('mode', 'preview')
   press('following', false)

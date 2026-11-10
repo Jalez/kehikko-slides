@@ -36,6 +36,11 @@ describe('what the page declares for the header', () => {
     expect(headerItemsSchema.safeParse(headerOf({ decks: [], open: null, work: null })).success).toBe(true)
   })
 
+  test('the open deck is held state, so the picker is a switch resting on it; with none open it is a jump', () => {
+    expect(headerOf(base).find((one) => one.id === 'deck')).toMatchObject({ kind: 'switch', value: 'd0' })
+    expect(headerOf({ ...base, open: null, work: null }).find((one) => one.id === 'deck')).toMatchObject({ kind: 'go' })
+  })
+
   test('no deck open: the decks to go to and a new one, and nothing about a slide', () => {
     expect(headerOf({ ...base, open: null, work: null }).map((one) => one.id)).toEqual(['deck', 'deck-new'])
     expect(headerOf({ decks: [], open: null, work: null }).map((one) => one.id)).toEqual(['deck-new'])
@@ -43,7 +48,7 @@ describe('what the page declares for the header', () => {
 
   test('the slide item names the tool that does the same for a program, and nothing is an agent’s to press', () => {
     const items = headerOf(base)
-    expect(items.find((one) => one.id === 'slide')).toMatchObject({ kind: 'go', tool: 'show_slide', label: 'Slide 1 of 2' })
+    expect(items.find((one) => one.id === 'slide')).toMatchObject({ kind: 'go', tool: 'show_slide', label: 'Go to slide' })
     expect(items.find((one) => one.id === 'deck')!.tool).toBeUndefined()
     expect(items.some((one) => one.agents)).toBe(false)
     expect(items.find((one) => one.id === 'deck-remove')).toMatchObject({ confirm: true })

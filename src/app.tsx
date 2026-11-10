@@ -149,6 +149,13 @@ export function Screen({
   const server = useServerStanding()
   const ready: CoverState | null = coverFor({ where: host.where, projectPath: host.projectPath, server })
   const cover = ready === 'down' && list?.length ? null : (ready ?? (!list ? 'loading' : null))
+  /* The host's cover is held until the page is drawn (protocol 2.70.0): once the list is read and the open deck has
+     come in, or a cover says why there is nothing to draw. */
+  const drawn = cover === 'waiting' || cover === 'loading' ? false : cover !== null ? true : !open || (state !== null && state !== 'loading')
+  const hostReady = host.ready
+  useEffect(() => {
+    if (drawn) hostReady?.()
+  }, [drawn, hostReady])
 
   const here = ordered.find((one) => one.slug === open) ?? null
   const retitle = async (title: string) => {
