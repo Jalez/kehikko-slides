@@ -35,6 +35,8 @@ export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'pro
   drawsFooter: boolean | null
   /** Declares the footer for the host to draw (`kehikot.footer`); only when `drawsFooter` is true. */
   footer(items: FooterItemInput[]): void
+  /** Say the page is drawn (protocol 2.70.0): the host's cover, held until then, comes off. Optional so a test host can leave it out. */
+  ready?: ProtocolHost['ready']
   presses: MutableRefObject<Press | null>
   pressed: boolean
   /** `address.open` (protocol 2.16.0): present with a host that greeted; `answers` says whether it takes addresses. */
@@ -66,7 +68,7 @@ export function useKehikot(): Host {
       setPressed(true)
       return presses.current ? presses.current(press) : 'No deck is open here yet.'
     },
-  })
+  }, /* The kept view (protocol 2.70.0): the pane. Not the deck (kept by its slug already, and an index here), nor following (a press starts it). */ { keepView: { except: ['deck', 'following'] } })
   /* The same object the protocol hands back, with three more fields: a screen reads it as one thing. */
   return Object.assign(host, { presses, pressed })
 }

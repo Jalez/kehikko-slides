@@ -94,19 +94,22 @@ export function headerOf(state: HeaderState): HeaderItemInput[] {
 
   const decks = state.decks.slice(0, LIMITS.HEADER_OPTIONS)
   if (decks.length) {
-    items.push({
-      kind: 'go',
-      id: 'deck',
-      label: here && !state.footed ? cut(`Decks · ${here.title}`) : 'Decks',
-      icon: 'presentation',
-      options: decks.map((one, i) => ({ id: `d${i}`, label: cut(one.title) })),
-    })
+    const options = decks.map((one, i) => ({ id: `d${i}`, label: cut(one.title) }))
+    const at = decks.findIndex((one) => one.slug === state.open)
+    /* Which deck is open is held state, so with one open the picker is a switch resting on it. With none open
+       there is nothing held, and the picker is a jump. */
+    items.push(
+      at >= 0
+        ? { kind: 'switch', id: 'deck', label: 'Decks', icon: 'presentation', value: `d${at}`, options }
+        : { kind: 'go', id: 'deck', label: 'Decks', icon: 'presentation', options },
+    )
   }
   if (work && work.slides.length && !state.footed) {
     items.push({
       kind: 'go',
       id: 'slide',
-      label: work.current === null ? `Slides · ${work.count}` : `Slide ${work.current + 1} of ${work.count}`,
+      /* Where the slide is, is the footer's; with a host that draws none the page says it in its own row. */
+      label: 'Go to slide',
       icon: 'layout-list',
       /* An agent turns the page with the door's own tool, and is sent there. */
       tool: 'show_slide',

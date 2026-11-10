@@ -1,12 +1,10 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-
 import 'katex/dist/katex.min.css'
 import './index.css'
 
 /* For its side effect: installs the mailbox before React mounts, so a host's
    greeting that arrives early is held rather than lost. */
 import 'kehikot-module-protocol/client'
+import { mountPage } from 'kehikot-module-protocol/client/mount'
 import { App } from './app.tsx'
 import { PresenterView } from './presenter.tsx'
 import { PrintView } from './print.tsx'
@@ -16,17 +14,13 @@ import { routeOf } from './routes.ts'
    document has already put it on <html> before this runs. */
 const route = routeOf(location.href)
 
-const root = document.getElementById('root')
-if (root) {
-  createRoot(root).render(
-    <StrictMode>
-      {route.page === 'presenter' ? (
-        <PresenterView project={route.project} projectId={route.projectId} slug={route.slug} />
-      ) : route.page === 'print' ? (
-        <PrintView project={route.project} projectId={route.projectId} slug={route.slug} />
-      ) : (
-        <App />
-      )}
-    </StrictMode>,
-  )
-}
+mountPage(
+  'root',
+  route.page === 'presenter' ? (
+    <PresenterView project={route.project} projectId={route.projectId} slug={route.slug} />
+  ) : route.page === 'print' ? (
+    <PrintView project={route.project} projectId={route.projectId} slug={route.slug} />
+  ) : (
+    <App />
+  ),
+)

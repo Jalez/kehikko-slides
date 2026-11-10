@@ -28,6 +28,11 @@ export const pressFooter = (id: string, value?: string) => {
   return said
 }
 export const item = <K extends HeaderItemInput['kind']>(id: string) => wire.items.find((one) => one.id === id) as Extract<HeaderItemInput, { kind: K }> | undefined
+/** The title of the deck the header's switch rests on, or undefined while none is open (then it is a jump). */
+export const openDeck = () => {
+  const deck = item<'switch'>('deck')
+  return deck?.options.find((one) => one.id === deck.value)?.label
+}
 export const press = (id: string, value?: string | boolean) => {
   let said = 'no page takes presses' as string | boolean | void
   act(() => {
