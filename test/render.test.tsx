@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { Screen, byEpic } from '../src/app.tsx'
-import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, following, footItem, host, item, jumps, pause, press, pressFooter, preview, type, wire } from './fakes.tsx'
+import { DECK, FakeEditor, caretAt, draw, editor, fakeDecks, following, footItem, host, item, jumps, openDeck, pause, press, pressFooter, preview, type, wire } from './fakes.tsx'
 
 afterEach(cleanup)
 
@@ -58,14 +58,14 @@ describe('the deck switcher', () => {
       },
     )
     draw(fake)
-    await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Defence'))
-    expect(item<'go'>('deck')!.options.map((one) => one.label)).toEqual(['Defence', 'Another talk'])
+    await waitFor(() => expect(openDeck()).toBe('Defence'))
+    expect(item<'switch'>('deck')!.options.map((one) => one.label)).toEqual(['Defence', 'Another talk'])
     /* No strip of its own: no switcher button, no header row. */
     expect(document.querySelector('header')).toBeNull()
     expect(screen.queryByRole('button', { name: /Defence/ })).toBeNull()
 
     press('deck', 'd1')
-    await waitFor(() => expect(item<'go'>('deck')?.label).toBe('Decks · Another talk'))
+    await waitFor(() => expect(openDeck()).toBe('Another talk'))
     press('deck-rename')
     const field = await screen.findByLabelText('deck name')
     expect((field as HTMLInputElement).value).toBe('Another talk')
@@ -109,10 +109,10 @@ describe('following the epic', () => {
     return { fake, turn: (epic: string | null) => view.rerender(at(epic)) }
   }
   /** The deck that is open, as the Go item names it. */
-  const open = () => item<'go'>('deck')?.label.replace(/^Decks · /, '')
+  const open = () => openDeck()
   const shown = (name: string) => waitFor(() => expect(open()).toBe(name))
   const pick = async (name: string) => {
-    const deck = item<'go'>('deck')!
+    const deck = item<'switch'>('deck')!
     press('deck', deck.options.find((one) => one.label === name)!.id)
   }
 
@@ -276,12 +276,12 @@ describe('history', () => {
 describe('the header the host draws', () => {
   test('there is no row of controls in the page: every one is declared, in the menu its kind names', async () => {
     draw(fakeDecks())
-    await waitFor(() => expect(item<'go'>('slide')?.label).toBe('Slide 1 of 3'))
+    await waitFor(() => expect(item<'go'>('slide')?.label).toBe('Go to slide'))
     await waitFor(() => expect(following().getAttribute('aria-label')).toBe('Following the paper'))
     expect(wire.items.map((one) => `${one.kind} ${one.id}`)).toEqual([
       'switch mode',
       'toggle following',
-      'go deck',
+      'switch deck',
       'go slide',
       'run present',
       'run presenter',
@@ -297,7 +297,7 @@ describe('the header the host draws', () => {
     expect(item<'switch'>('mode')).toMatchObject({ value: 'edit', options: [{ id: 'edit', label: 'Edit' }, { id: 'preview', label: 'Preview' }] })
     expect(following().getAttribute('aria-label')).toBe('Following the paper')
     /* An agent turns the page with the door's tool, and is sent there; nothing here is an agent's to press. */
-    expect(item<'go'>('slide')).toMatchObject({ tool: 'show_slide', label: 'Slide 1 of 3' })
+    expect(item<'go'>('slide')).toMatchObject({ tool: 'show_slide', label: 'Go to slide' })
     expect(item<'go'>('slide')!.options).toEqual([
       { id: 's0', label: '1. Bridging the gap' },
       { id: 's1', label: '2. The problem' },
@@ -316,7 +316,8 @@ describe('the header the host draws', () => {
     expect(press('mode', 'preview')).toBe(true)
     await waitFor(() => expect(item<'switch'>('mode')!.value).toBe('preview'))
     press('slide', 's2')
-    await waitFor(() => expect(item<'go'>('slide')!.label).toBe('Slide 3 of 3'))
+    /* The slide in front is the footer's to say (or the page's own row), never the header's label. */
+    await waitFor(() => expect(screen.getByTestId('position').textContent).toBe('3 / 3'))
     expect(preview().getByRole('heading').textContent).toBe('The answer')
     expect(press('slide', 's9')).toBe('That slide is not among the slides shown now.')
     /* The state wanted, not "flip": said twice, it changes nothing. */
@@ -417,7 +418,7 @@ describe('the footer the host draws', () => {
     expect(screen.queryByLabelText('next slide')).toBeNull()
     /* The header neither counts the slides nor names the deck: that is the footer's. */
     expect(item('slide')).toBeUndefined()
-    expect(item<'go'>('deck')?.label).toBe('Decks')
+    expect(item<'switch'>('deck')?.label).toBe('Decks')
   })
 
   test('Next and Previous in the footer step the slides, and the slides to go to are there', async () => {
@@ -443,8 +444,8 @@ describe('the footer the host draws', () => {
       const view = draw(fake, { drawsHeader: true, drawsFooter })
       await waitFor(() => expect(screen.getByTestId('position').textContent).toBe('1 / 3'))
       expect(wire.footer).toBeNull()
-      expect(item<'go'>('slide')?.label).toBe('Slide 1 of 3')
-      expect(item<'go'>('deck')?.label).toBe('Decks · Defence')
+      expect(item<'go'>('slide')?.label).toBe('Go to slide')
+      expect(openDeck()).toBe('Defence')
       view.unmount()
     }
   })
