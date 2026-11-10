@@ -32,7 +32,7 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#1e35679da2f6926ca31668e76e3d372591e4b121",
+    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#53a5cce5df9822a19c85b6057fea07c6c6a2a33b",
     "tailwind-merge": "^3.6.0",
     "zod": "^3.23.8"
   },
