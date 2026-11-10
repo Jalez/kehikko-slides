@@ -16,6 +16,9 @@ import {
   slideRanges,
   type Slide,
 } from './deck/format.ts'
+import { answerProposalTool, decideProposal, openProposals, proposalTools, settledProposals, shown } from 'kehikot-module-protocol/proposals'
+
+import { PROPOSALS, SITE } from './proposals.ts'
 import { POINTER, POINTER_DID, citedStream, citing, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
 import { resolveFolder, setHostResolve } from './host-ask.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
@@ -300,6 +303,8 @@ function tools() {
          ask for this one. Not idempotent: the same call again turns a page the person has since turned away. */
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
+    /* Proposed changes (protocol 2.71.0): propose_change, list_proposals, read_proposal, withdraw_proposal. */
+    ...proposalTools(PROPOSALS),
   ]
 }
 
@@ -437,7 +442,8 @@ async function callResolved(name: string, args: Record<string, unknown>): Promis
   if (!named) return call(name, args)
   const at = await projectAt(named)
   if (!at.ok) throw new Error(at.why)
-  const text = call(name, { ...args, project: at.path })
+  const proposed = await answerProposalTool(SITE, PROPOSALS, name, { ...args, project: at.path })
+  const text = proposed ?? call(name, { ...args, project: at.path })
   return at.movedFrom ? `${text}\n\n${DOOR_PROJECT_SAYS.followed(at.movedFrom, at.path)}` : text
 }
 
@@ -666,7 +672,7 @@ function mcp(rpc: Rpc): Reply | Promise<Reply> {
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 /** The doors under /api/ that are about one project, besides the picture (which is asked the same way). */
-const PROJECT_DOORS = new Set<string>([PATHS.decks, PATHS.deck, PATHS.history, PATHS.undo, PATHS.citations, PATHS.source, PATHS.present, PATHS.pointer])
+const PROJECT_DOORS = new Set<string>([PATHS.decks, PATHS.deck, PATHS.history, PATHS.undo, PATHS.citations, PATHS.source, PATHS.present, PATHS.pointer, PATHS.proposals, PATHS.proposal])
 
 /** What rides with every picture. `style-src` lets an SVG's own `<style>` colour it; nothing in it can load or run. */
 export const PICTURE_HEADERS: Record<string, string> = {
@@ -789,6 +795,28 @@ export async function answer(
   if (path === PATHS.deck && method === 'DELETE') return after(done(deleteDeck(project, slug), () => ({})))
 
   if (path === PATHS.history && method === 'GET') return done(history(project, slug), (entries) => ({ entries }))
+
+  /* Proposed changes (protocol 2.71.0): what is open on a deck, measured against it as it is now, and the person's answer. */
+  if (path === PATHS.proposals && method === 'GET') {
+    if (badSlug(slug)) return bad(badSlug(slug)!)
+    return ok({ proposals: openProposals(SITE, project, slug).map(shown), settled: settledProposals(SITE, project, slug).slice(0, 20).map(shown) })
+  }
+  if (path === PATHS.proposal && method === 'POST') {
+    const id = field(body, 'id')
+    const decision = field(body, 'decision')
+    if (decision !== 'accept' && decision !== 'decline') return bad('A proposal is accepted or declined, and this said neither.')
+    const hunks = Array.isArray(body?.hunks) ? (body!.hunks as unknown[]).filter((one): one is number => typeof one === 'number') : undefined
+    const answered = decideProposal(
+      SITE,
+      project,
+      id,
+      decision === 'accept'
+        ? { kind: 'accept', ...(typeof body?.final === 'string' ? { final: body.final } : {}), ...(hunks ? { hunks } : {}) }
+        : { kind: 'decline', reason: field(body, 'reason') },
+    )
+    if (!answered.ok) return { status: answered.stale ? 409 : 400, body: { ok: false, error: answered.why, stale: answered.stale } }
+    return ok({ proposal: answered.proposal })
+  }
   if (path === PATHS.undo && method === 'POST') {
     return after(done(undo(project, slug, field(body, 'id')), (undone) => ({ version: undone.version })))
   }

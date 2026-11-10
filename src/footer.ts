@@ -1,4 +1,5 @@
 import { LIMITS, type FooterItemInput } from 'kehikot-module-protocol'
+import { proposalsFooter } from 'kehikot-module-protocol/client/proposals'
 
 import { cut, slidesOffered, type Work } from './header.ts'
 import type { SaveState } from './use-deck.ts'
@@ -93,6 +94,8 @@ export function footerItems(state: FooterState): FooterItemInput[] {
       })
     }
   }
+  /* The proposed changes to the deck (protocol 2.71.0): the count, with Previous and Next proposal beside it. A readout, so the footer's. */
+  if (work?.proposals) items.push(...proposalsFooter(work.proposals))
   if (state.save) {
     const bad = state.save === 'conflict' || state.save === 'failed'
     items.push({ kind: 'text', id: 'save', text: WORDS[state.save], align: 'end', ...(bad ? { level: 'critical' as const } : {}), tooltip: SAID[state.save] })

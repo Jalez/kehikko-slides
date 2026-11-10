@@ -88,4 +88,12 @@ describe('what the page declares for the footer', () => {
     /* Present, Presenter view, Export PDF and History stay the header's runs. */
     expect(header.map((one) => one.id)).toEqual(expect.arrayContaining(['present', 'presenter', 'export', 'history']))
   })
+
+  test('the proposed changes are counted, with Previous and Next proposal beside the count (protocol 2.71.0)', () => {
+    expect(ids({ ...base, work: { ...work, proposals: { open: 0, at: null, noMore: false } } })).not.toContain('proposals')
+    const with2 = { ...base, work: { ...work, proposals: { open: 2, at: 1, noMore: false } } }
+    expect(ids(with2)).toEqual(expect.arrayContaining(['proposal-prev', 'proposals', 'proposal-next']))
+    expect((find(with2, 'proposals') as { text: string }).text).toBe('Proposal 1 of 2')
+    expect(footerItemsSchema.safeParse(footerItems(with2)).success).toBe(true)
+  })
 })

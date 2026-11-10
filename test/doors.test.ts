@@ -154,6 +154,10 @@ describe('the MCP door', () => {
       'link_slide',
       'cite_slide',
       'show_slide',
+      'propose_change',
+      'list_proposals',
+      'read_proposal',
+      'withdraw_proposal',
     ])
   })
 
