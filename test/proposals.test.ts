@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { answer } from './now.ts'
+import { watchDecks } from '../live.ts'
 import { TICKET } from '../doors.ts'
 import { createDeck, history, readDeck, writeDeck } from '../store.ts'
 
@@ -73,6 +74,26 @@ describe('proposed changes to a deck', () => {
     const refused = await answer('POST', '/api/proposal', new URLSearchParams(), { project: dir, id: second, decision: 'accept' }, TICKET)
     expect(refused?.status).toBe(409)
     expect(readFileSync(join(dir, '.kehikot/slides', `${made.value.slug}.md`), 'utf8')).toContain('- omega')
+  })
+
+  test('a page watching the project is told when a proposal is filed or answered, at the deck’s own version', async () => {
+    const dir = project('told')
+    const made = createDeck(dir, 'Told')
+    if (!made.ok) throw new Error(made.error)
+    writeDeck(dir, made.value.slug, '---\ntitle: Told\n---\n\n# One\n- alpha\n')
+    const heard: { slug: string; version: string | null }[] = []
+    const watching = watchDecks(dir, (event) => void heard.push(event))
+    if (!watching.ok) throw new Error(watching.error)
+    try {
+      const filed = await tool('propose_change', { project: dir, deck: made.value.slug, find: '- alpha', replace: '- beta', why: 'w' })
+      const id = /Filed as (p-[0-9a-f]+)/.exec(filed)![1]!
+      expect(heard.at(-1)).toEqual({ slug: made.value.slug, version: expect.any(String) })
+      const before = heard.length
+      await answer('POST', '/api/proposal', new URLSearchParams(), { project: dir, id, decision: 'decline', reason: 'r' }, TICKET)
+      expect(heard.length).toBeGreaterThan(before)
+    } finally {
+      watching.value()
+    }
   })
 
   test('the page’s doors take the ticket', async () => {

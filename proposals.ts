@@ -1,7 +1,7 @@
 import type { ProposalDoorOptions, ProposalSite } from 'kehikot-module-protocol/proposals'
 import { fileKeeper } from 'kehikot-module-protocol/proposals/store'
 
-import { poke } from './live.ts'
+import { poke, tellDeck } from './live.ts'
 import { ID } from './manifest.ts'
 import { readDeck, recordedWrite } from './store.ts'
 
@@ -29,5 +29,9 @@ export const SITE: ProposalSite = {
     if (!written.ok) return { ok: false, why: written.error }
     poke(project)
     return { ok: true }
+  },
+  /* A page open on the deck re-reads its proposals when told, and never on a clock. */
+  onChanged(project, slug) {
+    if (slug) tellDeck(project, slug)
   },
 }

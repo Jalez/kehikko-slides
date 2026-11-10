@@ -54,7 +54,6 @@ export function Workspace({
   theme,
   saveDelay,
   publishDelay,
-  proposalsEvery = 4000,
   onWork,
   act,
   onState,
@@ -75,8 +74,6 @@ export function Workspace({
   saveDelay?: number
   /** How long a move waits before the paper is turned; tests shorten it. */
   publishDelay?: number
-  /** How often the proposed changes are read again while the deck is open, in ms; tests shorten it. */
-  proposalsEvery?: number
   /** What this deck's header items are made of, said when it changes; null when the deck is gone from the screen. */
   onWork(work: Work | null): void
   /** Where this puts what takes a press on one of its items. It answers `undefined` for an item that is not its own. */
@@ -360,10 +357,10 @@ export function Workspace({
   }
 
   /*
-   * The proposed changes to this deck (protocol 2.71.0): read when the deck opens, whenever a deck
-   * changes on disk, after an answer, and on a slow clock, since an agent filing one changes no deck
-   * file. Answered through the door; an accepted one is written to the deck, which the watch then
-   * reloads here like any other agent write.
+   * The proposed changes to this deck (protocol 2.71.0): read when the deck opens, whenever the
+   * watch says a deck changed — the door says so for a proposal filed or answered too (`tellDeck`),
+   * so never on a clock — and after an answer. An accepted one is written to the deck, which the
+   * watch then reloads here like any other agent write.
    */
   const [proposals, setProposals] = useState<ShownProposal[]>([])
   const [proposalSaid, setProposalSaid] = useState<Record<string, string>>({})
@@ -378,9 +375,7 @@ export function Workspace({
   }, [decks, project, slug])
   useEffect(() => {
     void readProposals()
-    const timer = setInterval(() => void readProposals(), proposalsEvery)
-    return () => clearInterval(timer)
-  }, [readProposals, proposalsEvery, watched, reread])
+  }, [readProposals, watched, reread])
   const walk = useProposalWalk(proposals)
   const answerProposal = async (id: string, answer: { decision: 'accept' | 'decline'; reason?: string; final?: string; hunks?: number[] }) => {
     setAnswering(id)

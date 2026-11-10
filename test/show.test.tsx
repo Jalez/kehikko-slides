@@ -316,7 +316,7 @@ describe('show_slide on the MCP door', () => {
     expect(one.outputSchema?.properties.outcome.enum).toEqual(['shown', 'unseen', 'declined'])
     expect(one.outputSchema?.required).toEqual(['deck', 'index', 'slide', 'slides', 'outcome', 'pages', 'open', 'outside', 'hidden', 'stale', 'presenting', 'silent', 'why'])
     /* No tool that writes a deck claims to only read: the two that list and read do, and no other. */
-    const READS = ['list_decks', 'read_deck', 'show_slide']
+    const READS = ['list_decks', 'read_deck', 'show_slide', 'list_proposals', 'read_proposal']
     for (const each of listed) expect((each.annotations as { readOnlyHint?: boolean } | undefined)?.readOnlyHint).toBe(READS.includes(each.name))
   })
 
