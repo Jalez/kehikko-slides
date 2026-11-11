@@ -8,7 +8,7 @@ import { slideAt, slideRanges, type SectionLink, type Slide } from '../deck/form
  * (test/follow.test.ts). `use-following.ts` is the thin hook around it.
  *
  * Paths: the paper's passage names its file ABSOLUTELY; a slide's `section`
- * names it relative to the project (as the paper's `list_sections` does). The
+ * names it relative to the project (as the document provider's sections tool does). The
  * two meet by joining the slide's path onto the project's directory.
  */
 

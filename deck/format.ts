@@ -58,9 +58,9 @@ export const ASPECTS = ['16:9', '4:3'] as const
 export type Aspect = (typeof ASPECTS)[number]
 
 export interface SectionLink {
-  /** Relative to the project root, as the paper's `list_sections` gives it. */
+  /** Relative to the project root, as the document provider's sections tool gives it. */
   path: string
-  /** The heading's text, exactly as the paper spells it. */
+  /** The heading's text, exactly as the document spells it. */
   title: string
 }
 

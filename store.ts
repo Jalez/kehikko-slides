@@ -196,7 +196,7 @@ function removeDeck(project: string | null | undefined, slug: string): Result<nu
  * Citations
  * ------------------------------------------------------------------ */
 
-/** The largest file a citation is looked for in. A paper's chapter is far smaller. */
+/** The largest file a citation is looked for in. A document's chapter is far smaller. */
 const MAX_CITED_BYTES = 5_000_000
 
 /**
@@ -205,19 +205,20 @@ const MAX_CITED_BYTES = 5_000_000
  * stranger's string. Refused, all alike:
  *
  * - an absolute path, `..`, and any dot-file or dot-folder on the way, as
- *   written AND as resolved, except a paper's own (`.kehikot/paper/…`), which
- *   is what a slide cites;
+ *   written AND as resolved, except under `documents` — the folder the
+ *   project's document provider keeps its documents in, relative to the
+ *   project, as its descriptor says — which is what a slide cites;
  * - anything resolving outside the project, through a link at any segment;
  * - what is missing, not a file, or over {@link MAX_CITED_BYTES}.
  */
-export function citedText(root: string, path: string): string | null {
+export function citedText(root: string, path: string, documents: string | null = null): string | null {
   if (!path || path.length > 1000 || path.includes('\0') || isAbsolute(path)) return null
   const written = path.replace(/\\/g, '/').replace(/^(\.\/)+/, '')
-  if (hidden(written.split('/'))) return null
+  if (hidden(written.split('/'), documents)) return null
   try {
     /* Every segment resolved, so a folder that is a link is judged by where it leads. */
     const real = realpathSync(join(root, written))
-    if (!within(root, real) || real === root || hidden(relative(root, real).split('/'))) return null
+    if (!within(root, real) || real === root || hidden(relative(root, real).split('/'), documents)) return null
     const stat = statSync(real)
     if (!stat.isFile() || stat.size > MAX_CITED_BYTES) return null
     return readFileSync(real, 'utf8')
@@ -239,7 +240,7 @@ const ascii = (text: string) => [...text].map((one) => one.charCodeAt(0))
 /**
  * What a slide may show from the project: by extension, the type it is sent
  * as, and what its first bytes must be. Both have to agree, so a file renamed
- * to `.png` is not served as one. `pdf` is here because a paper's figures are
+ * to `.png` is not served as one. `pdf` is here because a document's figures are
  * PDFs; only WebKit (the desktop app) draws one in an `<img>`.
  */
 const PICTURES: Record<string, { type: string; looks: (bytes: Uint8Array) => boolean }> = {
@@ -259,12 +260,17 @@ const PICTURES: Record<string, { type: string; looks: (bytes: Uint8Array) => boo
   },
 }
 
-/** Where a paper and its figures are kept: the one dot-folder a slide's picture or citation is read from. */
-const PAPER_FIGURES = ['.kehikot', 'paper']
-
-/** Does this path go through a dot-file or dot-folder (`.git`, `.env`, `..`) other than a paper's own? */
-function hidden(segments: string[]): boolean {
-  const rest = PAPER_FIGURES.every((name, i) => segments[i] === name) ? segments.slice(PAPER_FIGURES.length) : segments
+/**
+ * Does this path go through a dot-file or dot-folder (`.git`, `.env`, `..`)? The one exception is
+ * `documents`: the folder, relative to the project, where the project's document provider keeps its
+ * documents and their figures (`documentsFolder` of its `document.proposals` descriptor). It is what a
+ * slide cites and shows. None given, no exception.
+ */
+function hidden(segments: string[], documents: string | null): boolean {
+  const open = documents ? documents.replace(/\\/g, '/').split('/').filter((one) => one && one !== '.') : []
+  /* A folder that says `..` anywhere is no exception at all. */
+  const usable = open.length > 0 && !open.includes('..')
+  const rest = usable && open.every((name, i) => segments[i] === name) ? segments.slice(open.length) : segments
   return rest.some((one) => one.startsWith('.'))
 }
 
@@ -276,24 +282,24 @@ function hidden(segments: string[]): boolean {
  * - a project that is not one with a slides folder: decks are the only thing
  *   that names a picture, so no other directory is read through this door;
  * - an absolute path, `..`, and any dot-file or dot-folder on the way, as
- *   written AND as resolved, except a paper's own (`.kehikot/paper/…`), where
- *   its figures are;
+ *   written AND as resolved, except under `documents` (as {@link citedText}
+ *   says), where a document's figures are;
  * - anything resolving outside the project, through a link at any segment;
  * - what is not a picture by its extension, or whose bytes are not that type;
  * - what is missing, not a file, empty, or over {@link MAX_PICTURE_BYTES}.
  */
-export function pictureBytes(project: string | null | undefined, path: string): { bytes: Uint8Array; type: string } | null {
+export function pictureBytes(project: string | null | undefined, path: string, documents: string | null = null): { bytes: Uint8Array; type: string } | null {
   const slides = slidesDir(project, false)
   if (!slides.ok || !existsSync(slides.value.dir)) return null
   const root = slides.value.root
   const kind = PICTURES[/\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase() ?? '']
   if (!kind || path.length > 1000 || path.includes('\0') || isAbsolute(path)) return null
   const written = path.replace(/\\/g, '/').replace(/^(\.\/)+/, '')
-  if (hidden(written.split('/'))) return null
+  if (hidden(written.split('/'), documents)) return null
   try {
     /* Every segment resolved, so a folder that is a link out of the project is refused like a file that is one. */
     const real = realpathSync(join(root, written))
-    if (!within(root, real) || real === root || hidden(relative(root, real).split('/'))) return null
+    if (!within(root, real) || real === root || hidden(relative(root, real).split('/'), documents)) return null
     const stat = statSync(real)
     if (!stat.isFile() || stat.size === 0 || stat.size > MAX_PICTURE_BYTES) return null
     const bytes = readFileSync(real)
@@ -308,35 +314,35 @@ export const MAX_CITED_SLICE = 4000
 
 /**
  * The exact words between two byte offsets of a project file: what a reader
- * selected in the paper, as the source has it rather than as it was drawn.
+ * selected in the document, as the source has it rather than as it was drawn.
  *
  * Only for a project that has a slides folder: a deck is the only thing a
  * passage is cited into, so no other directory is read through this door. The
  * file itself is confined as {@link citedText} says.
  */
-export function citedSlice(project: string | null | undefined, path: string, from: number, to: number): Result<string> {
+export function citedSlice(project: string | null | undefined, path: string, from: number, to: number, documents: string | null = null): Result<string> {
   const slides = slidesDir(project, false)
   if (!slides.ok) return slides
   if (!existsSync(slides.value.dir)) return { ok: false, status: 404, error: 'This project has no decks, so there is nothing to cite into.' }
   const root = slides.value.root
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from) return { ok: false, error: 'from and to are byte offsets, to after from.' }
   if (to - from > MAX_CITED_SLICE) return { ok: false, error: `That selection is longer than ${MAX_CITED_SLICE} bytes; cite a sentence or two.` }
-  const text = citedText(root, path)
+  const text = citedText(root, path, documents)
   if (text === null) return { ok: false, status: 404, error: `"${path.slice(0, 200)}" is not a readable file inside this project.` }
   const all = Buffer.from(text, 'utf8')
-  if (to > all.length) return { ok: false, error: 'That range runs past the end of the file; the paper may have changed since it was selected.' }
+  if (to > all.length) return { ok: false, error: 'That range runs past the end of the file; the document may have changed since it was selected.' }
   return { ok: true, value: all.subarray(from, to).toString('utf8') }
 }
 
 /** Every slide's sources, each looked for in its file. Indexed like the slides. */
-export function citations(project: string | null | undefined, slug: string): Result<CitationView[][]> {
+export function citations(project: string | null | undefined, slug: string, documents: string | null = null): Result<CitationView[][]> {
   const root = projectRoot(project)
   if (!root.ok) return root
   const deck = readDeck(root.value, slug)
   if (!deck.ok) return deck
   const files = new Map<string, string | null>()
   const textOf = (path: string) => {
-    if (!files.has(path)) files.set(path, citedText(root.value, path))
+    if (!files.has(path)) files.set(path, citedText(root.value, path, documents))
     return files.get(path) ?? null
   }
   return { ok: true, value: parseDeck(deck.value.text, slug).slides.map((slide) => slide.sources.map((one) => resolveSource(one, textOf(one.path)))) }

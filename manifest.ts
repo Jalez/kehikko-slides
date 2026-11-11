@@ -34,7 +34,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     'This canvas has Slides on it: presentation decks kept as Markdown files in the project, at '
     + '.kehikot/slides/<deck>.md. Slides linked to a paper section follow the paper as it is read, and turn the '
     + 'paper when shown. `list_decks` and `read_deck` show what exists; read a deck before changing it. To draft a '
-    + 'talk, use the paper module’s `list_sections` and `read_paper`, then `create_deck` and `write_deck` with one or '
+    + 'talk, read the document’s sections and source with the document provider’s tools, then `create_deck` and `write_deck` with one or '
     + 'more slides per section and speaker notes after a `Notes:` line, and `link_slide` each slide to its section. '
     + '`edit_slide` changes one slide. `show_slide` turns the page to the slide you are talking about; it writes '
     + 'nothing, counts slides from 0, and does not turn a talk. Another module points by setting the passage on the '
@@ -61,7 +61,10 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     /* `agents:message` is `messages.notify` alone, from the server: when the person has answered every
        proposal an agent session made to a deck, that session is told once what they decided, with the
        reasons for what they declined (`digest.ts`, the protocol's follow-up digest). */
-    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep', 'address:open', 'agents:message'],
+    /* `services:read` is `services.find`, from the server: which module keeps the project's document
+       (`document.proposals`), so a slide may cite and show the files in that module's folder, and an error
+       can name its tools (`host-ask.ts`, `documentsOf`). */
+    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep', 'address:open', 'agents:message', 'services:read'],
     /* True because this module keeps material and takes writes: the host then
        frames it on its real origin, so its scripts and `/api` calls are plain
        same-origin requests and nothing needs a permissive CORS header that

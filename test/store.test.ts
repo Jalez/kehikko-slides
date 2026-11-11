@@ -183,6 +183,9 @@ describe('the undo trail', () => {
   })
 })
 
+/** Where the project's document provider keeps its documents, as its descriptor says. */
+const DOCS = '.kehikot/writer'
+
 describe('a picture a slide names', () => {
   const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
   const PDF = Buffer.from('%PDF-1.7\n')
@@ -192,7 +195,7 @@ describe('a picture a slide names', () => {
   function made(name: string): string {
     const root = realpathSync(project(name))
     must(createDeck(root, 'Talk'))
-    for (const dir of ['figures', '.git', '.kehikot/paper/thesis/figures', '.kehikot/paper/thesis/.cache', '.kehikot/notes']) {
+    for (const dir of ['figures', '.git', '.kehikot/writer/thesis/figures', '.kehikot/writer/thesis/.cache', '.kehikot/notes']) {
       mkdirSync(join(root, dir), { recursive: true })
     }
     writeFileSync(join(root, 'figures', 'one.png'), PNG)
@@ -205,8 +208,8 @@ describe('a picture a slide names', () => {
     writeFileSync(join(root, '.hidden.png'), PNG)
     writeFileSync(join(root, 'notes.md'), '# notes')
     writeFileSync(join(root, '.git', 'packed.png'), PNG)
-    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', 'figures', 'flow.pdf'), PDF)
-    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', '.cache', 'kept.png'), PNG)
+    writeFileSync(join(root, '.kehikot', 'writer', 'thesis', 'figures', 'flow.pdf'), PDF)
+    writeFileSync(join(root, '.kehikot', 'writer', 'thesis', '.cache', 'kept.png'), PNG)
     writeFileSync(join(root, '.kehikot', 'notes', 'pasted.png'), PNG)
     return root
   }
@@ -216,8 +219,19 @@ describe('a picture a slide names', () => {
     expect(pictureBytes(root, 'figures/one.png')).toEqual({ bytes: PNG, type: 'image/png' })
     expect(pictureBytes(root, './figures/one.png')?.type).toBe('image/png')
     expect(pictureBytes(root, 'figures/drawn.svg')?.type).toBe('image/svg+xml')
-    /* A paper's figures: the one dot-folder that is read, and the one place a PDF is the picture. */
-    expect(pictureBytes(root, '.kehikot/paper/thesis/figures/flow.pdf')?.type).toBe('application/pdf')
+    /* A document's figures: the one dot-folder that is read — the provider's, as its descriptor says. */
+    expect(pictureBytes(root, '.kehikot/writer/thesis/figures/flow.pdf', DOCS)?.type).toBe('application/pdf')
+    expect(pictureBytes(root, '.kehikot/writer/thesis/figures/flow.pdf', `${DOCS}/`)?.type).toBe('application/pdf')
+  })
+
+  test('with no document provider, no dot-folder is an exception', () => {
+    const root = made('pictures-no-provider')
+    expect(pictureBytes(root, '.kehikot/writer/thesis/figures/flow.pdf')).toBeNull()
+    expect(pictureBytes(root, '.kehikot/writer/thesis/figures/flow.pdf', null)).toBeNull()
+    /* Another module's folder is not the provider's. */
+    expect(pictureBytes(root, '.kehikot/notes/pasted.png', DOCS)).toBeNull()
+    /* A folder that climbs out is no exception. */
+    expect(pictureBytes(root, '.git/packed.png', '.kehikot/../.git')).toBeNull()
   })
 
   test('what is not a picture is not served, by its name or by its bytes', () => {
@@ -239,11 +253,11 @@ describe('a picture a slide names', () => {
       '.git/packed.png',
       'figures/../.git/packed.png',
       '.kehikot/notes/pasted.png',
-      '.kehikot/paper/thesis/.cache/kept.png',
-      '.kehikot/paper/../../.git/packed.png',
+      '.kehikot/writer/thesis/.cache/kept.png',
+      '.kehikot/writer/../../.git/packed.png',
       'figures/one.png\0.md',
     ]
-    for (const path of refused) expect([path, pictureBytes(root, path)]).toEqual([path, null])
+    for (const path of refused) expect([path, pictureBytes(root, path, DOCS)]).toEqual([path, null])
   })
 
   test('a link out of the project is refused, whether it is the picture or a folder on the way to it', () => {
@@ -276,16 +290,16 @@ describe('a picture a slide names', () => {
 describe('a passage a slide cites', () => {
   const WORDS = 'The mean rating was highest.\n'
 
-  /** A project with a deck in it, a chapter, a paper of its own, and things nobody cites. */
+  /** A project with a deck in it, a chapter, a document of its own, and things nobody cites. */
   function made(name: string): string {
     const root = realpathSync(project(name))
     must(createDeck(root, 'Talk'))
-    for (const dir of ['chapters', '.git', '.kehikot/paper/thesis', '.kehikot/paper/thesis/.cache', '.kehikot/notes']) {
+    for (const dir of ['chapters', '.git', '.kehikot/writer/thesis', '.kehikot/writer/thesis/.cache', '.kehikot/notes']) {
       mkdirSync(join(root, dir), { recursive: true })
     }
     writeFileSync(join(root, 'chapters', '4.tex'), WORDS)
-    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', 'main.tex'), WORDS)
-    writeFileSync(join(root, '.kehikot', 'paper', 'thesis', '.cache', 'kept.tex'), WORDS)
+    writeFileSync(join(root, '.kehikot', 'writer', 'thesis', 'main.tex'), WORDS)
+    writeFileSync(join(root, '.kehikot', 'writer', 'thesis', '.cache', 'kept.tex'), WORDS)
     writeFileSync(join(root, '.kehikot', 'notes', 'notes.json'), WORDS)
     writeFileSync(join(root, '.env'), WORDS)
     writeFileSync(join(root, '.git', 'config'), WORDS)
@@ -293,15 +307,18 @@ describe('a passage a slide cites', () => {
     return root
   }
 
-  test('a chapter of the project and the paper kept in it are read, whichever way the path is spelled', () => {
+  test('a chapter of the project and the document kept in it are read, whichever way the path is spelled', () => {
     const root = made('cited')
     expect(citedText(root, 'chapters/4.tex')).toBe(WORDS)
     expect(citedText(root, './chapters/4.tex')).toBe(WORDS)
-    expect(citedText(root, '.kehikot/paper/thesis/main.tex')).toBe(WORDS)
-    expect(must(citedSlice(root, '.kehikot/paper/thesis/main.tex', 4, 8))).toBe('mean')
+    expect(citedText(root, '.kehikot/writer/thesis/main.tex', DOCS)).toBe(WORDS)
+    expect(must(citedSlice(root, '.kehikot/writer/thesis/main.tex', 4, 8, DOCS))).toBe('mean')
+    /* With no document provider the document's folder is a dot-folder like any other. */
+    expect(citedText(root, '.kehikot/writer/thesis/main.tex')).toBeNull()
+    expect(citedSlice(root, '.kehikot/writer/thesis/main.tex', 4, 8)).toMatchObject({ ok: false, status: 404 })
   })
 
-  test('a dot-file or dot-folder on the way is not read, but for the paper’s own', () => {
+  test('a dot-file or dot-folder on the way is not read, but for the document’s own', () => {
     const root = made('cited-hidden')
     const refused = [
       '.env',
@@ -310,7 +327,7 @@ describe('a passage a slide cites', () => {
       'chapters/.draft.tex',
       '.kehikot/notes/notes.json',
       '.kehikot/slides/talk.md',
-      '.kehikot/paper/thesis/.cache/kept.tex',
+      '.kehikot/writer/thesis/.cache/kept.tex',
       '../cited/chapters/4.tex',
       'chapters/../.env',
       join(root, 'chapters', '4.tex'),
@@ -319,7 +336,7 @@ describe('a passage a slide cites', () => {
       '',
       'chapters/4.tex\0',
     ]
-    for (const path of refused) expect([path, citedText(root, path)]).toEqual([path, null])
+    for (const path of refused) expect([path, citedText(root, path, DOCS)]).toEqual([path, null])
     expect(citedSlice(root, '.env', 0, 4)).toMatchObject({ ok: false, status: 404 })
   })
 
