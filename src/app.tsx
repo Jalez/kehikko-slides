@@ -250,7 +250,7 @@ export function Screen({
   }, [canName])
 
   return (
-    <div className="relative flex h-screen flex-col text-sm">
+    <div data-kehikot-page className="relative flex h-screen flex-col text-sm">
       {/* No strip. The page's own way to the items, only where no host draws them: nobody frames this page, or
           the host says it draws none, or says nothing and has not pressed one yet. */}
       {host.where !== 'hosted' || !(host.drawsHeader ?? host.pressed) ? <HeaderMenu items={items} onPress={press} /> : null}
