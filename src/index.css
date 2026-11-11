@@ -367,3 +367,12 @@
     padding: 0 14px;
   }
 }
+
+/*
+ * The container's background off (Settings › Appearance; protocol 2.82.0, `data-kehikot-background`
+ * on <html>, put there by the protocol's client): the deck's editor paints nothing, so the host's
+ * canvas shows through. A slide keeps its own surface: it is the thing being designed.
+ */
+html[data-kehikot-background='none'] .deck-editor .cm-editor {
+  background: transparent;
+}

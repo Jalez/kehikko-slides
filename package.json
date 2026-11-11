@@ -1,6 +1,6 @@
 {
   "name": "kehikko-slides",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "type": "module",
   "description": "Slides, a module a kehikko host frames. An app: its own store, its own page, its own port.",
@@ -27,7 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "katex": "0.16.47",
-    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#v2.75.0",
+    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#v2.82.0",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
