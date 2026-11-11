@@ -58,7 +58,10 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   reacts: ['passage', 'parts'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep', 'address:open'],
+    /* `agents:message` is `messages.notify` alone, from the server: when the person has answered every
+       proposal an agent session made to a deck, that session is told once what they decided, with the
+       reasons for what they declined (`digest.ts`, the protocol's follow-up digest). */
+    uses: ['epics:read', 'passage:set', 'showing:set', 'state:keep', 'address:open', 'agents:message'],
     /* True because this module keeps material and takes writes: the host then
        frames it on its real origin, so its scripts and `/api` calls are plain
        same-origin requests and nothing needs a permissive CORS header that

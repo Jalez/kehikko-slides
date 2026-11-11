@@ -1,6 +1,7 @@
 import type { ProposalDoorOptions, ProposalSite } from 'kehikot-module-protocol/proposals'
 import { fileKeeper } from 'kehikot-module-protocol/proposals/store'
 
+import { digestSettled, digestSite } from './digest.ts'
 import { poke, tellDeck } from './live.ts'
 import { ID } from './manifest.ts'
 import { readDeck, recordedWrite } from './store.ts'
@@ -34,4 +35,8 @@ export const SITE: ProposalSite = {
   onChanged(project, slug) {
     if (slug) tellDeck(project, slug)
   },
+  /* The filer hears once, when the person has answered all its proposals on the deck (`digest.ts`). */
+  onSettled: digestSettled,
 }
+
+digestSite(SITE)
