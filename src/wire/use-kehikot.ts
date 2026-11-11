@@ -37,6 +37,8 @@ export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'pro
   footer(items: FooterItemInput[]): void
   /** Say the page is drawn (protocol 2.70.0): the host's cover, held until then, comes off. Optional so a test host can leave it out. */
   ready?: ProtocolHost['ready']
+  /** Protocol 2.84.0: say the page is reading what a switch asks for; the host may cover it in these words. */
+  loading?: ProtocolHost['loading']
   presses: MutableRefObject<Press | null>
   pressed: boolean
   /** `address.open` (protocol 2.16.0): present with a host that greeted; `answers` says whether it takes addresses. */

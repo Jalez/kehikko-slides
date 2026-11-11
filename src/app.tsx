@@ -21,6 +21,9 @@ import { Workspace } from '@/workspace'
 import type { DeckSummary, WatchEvent } from '../deck/api.ts'
 import type { SaveState } from './use-deck.ts'
 
+/** What the host's cover says while this page reads a deck (protocol 2.84.0): on the first load and after a switch. */
+export const LOADING_DECK = 'Loading the deck…'
+
 export function App() {
   return <Screen host={useKehikot()} />
 }
@@ -153,9 +156,12 @@ export function Screen({
      come in, or a cover says why there is nothing to draw. */
   const drawn = cover === 'waiting' || cover === 'loading' ? false : cover !== null ? true : !open || (state !== null && state !== 'loading')
   const hostReady = host.ready
+  const hostLoading = host.loading
+  /* While a switched-to deck comes in, the host's cover again, in this module's words (protocol 2.84.0). */
   useEffect(() => {
     if (drawn) hostReady?.()
-  }, [drawn, hostReady])
+    else hostLoading?.(LOADING_DECK)
+  }, [drawn, hostReady, hostLoading])
 
   const here = ordered.find((one) => one.slug === open) ?? null
   const retitle = async (title: string) => {
