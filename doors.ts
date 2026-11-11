@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'node:path'
 
-import { DOOR_PROJECT_SAYS, KEHIKOT_DIR, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
+import { DOOR_PROJECT_SAYS, KEHIKOT_DIR, PLACE_PARAM, linesOf, resolveSource, type CitationView } from 'kehikot-module-protocol'
 
 import { establishBuild, mintTicket, refuseTicket, streams, type Reply, type Stream } from 'kehikot-module-protocol/serve'
 
@@ -18,6 +18,7 @@ import {
 } from './deck/format.ts'
 import { answerProposalTool, decideProposal, openProposals, proposalTools, settledProposals, shown } from 'kehikot-module-protocol/proposals'
 
+import { placeToken, rememberFiler } from './digest.ts'
 import { PROPOSALS, SITE } from './proposals.ts'
 import { POINTER, POINTER_DID, citedStream, citing, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
 import { resolveFolder, setHostResolve } from './host-ask.ts'
@@ -437,12 +438,14 @@ function directiveSafe(what: string, value: string): void {
  * A tool call with its project resolved by the host: the tool is handed the path the host gave back, and
  * when that is not the path named, the answer says so — the agent uses the new path from then on.
  */
-async function callResolved(name: string, args: Record<string, unknown>): Promise<string> {
+async function callResolved(name: string, args: Record<string, unknown>, place: string | null = null): Promise<string> {
   const named = str(args.project, 1000)
   if (!named) return call(name, args)
   const at = await projectAt(named)
   if (!at.ok) throw new Error(at.why)
   const proposed = await answerProposalTool(SITE, PROPOSALS, name, { ...args, project: at.path })
+  /* Whose it is, so the session hears once what became of its proposals (`digest.ts`). */
+  if (proposed && name === 'propose_change') rememberFiler(proposed, place)
   const text = proposed ?? call(name, { ...args, project: at.path })
   return at.movedFrom ? `${text}\n\n${DOOR_PROJECT_SAYS.followed(at.movedFrom, at.path)}` : text
 }
@@ -629,7 +632,7 @@ interface Rpc {
   params?: { name?: string; arguments?: Record<string, unknown> }
 }
 
-function mcp(rpc: Rpc): Reply | Promise<Reply> {
+function mcp(rpc: Rpc, place: string | null = null): Reply | Promise<Reply> {
   const reply = (result: unknown) => ({ status: 200, body: { jsonrpc: '2.0', id: rpc.id ?? null, result } })
   const text = (s: string, isError = false) => reply({ content: [{ type: 'text', text: s }], ...(isError ? { isError } : {}) })
 
@@ -653,7 +656,7 @@ function mcp(rpc: Rpc): Reply | Promise<Reply> {
   }
   if (rpc.method === 'tools/call') {
     try {
-      return callResolved(String(rpc.params?.name ?? ''), rpc.params?.arguments ?? {}).then(
+      return callResolved(String(rpc.params?.name ?? ''), rpc.params?.arguments ?? {}, place).then(
         (said) => text(said),
         /* A refusal is an answer the agent reads, not a transport failure it retries. */
         (e: unknown) => text(e instanceof Error ? e.message : String(e), true),
@@ -708,7 +711,8 @@ export async function answer(
     if (!body || typeof body.method !== 'string') {
       return { status: 400, body: { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'not a request' } } }
     }
-    return mcp(body as Rpc)
+    /* The calling session's place token, when its door URL carries one: who to tell about its proposals. */
+    return mcp(body as Rpc, placeToken(query.get(PLACE_PARAM)))
   }
 
   if (!path.startsWith('/api/')) return null
