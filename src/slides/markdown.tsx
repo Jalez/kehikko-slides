@@ -128,7 +128,7 @@ const COMPONENTS: Components = {
 
 /**
  * A link in a slide. An ordinary new-tab link; when the canvas can take the address
- * (`address.open`, protocol 2.16.0) a press hands it over instead, and the Browser there opens it.
+ * (`address.open`, protocol 2.16.0) a press hands it over instead, and a module there that shows pages opens it.
  */
 function SlideLink({ href, onClick, ...rest }: ComponentProps<'a'>) {
   const open = useContext(OpenAddressContext)

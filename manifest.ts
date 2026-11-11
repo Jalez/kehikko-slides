@@ -1,4 +1,4 @@
-import { MANIFEST_KIND, PROTOCOL, manifestSchema, type Manifest } from 'kehikot-module-protocol'
+import { MANIFEST_KIND, MODULE_FOLDERS, PROTOCOL, manifestSchema, moduleFolder, type Manifest } from 'kehikot-module-protocol'
 import pkg from './package.json'
 
 export const ID = 'kehikot.slides'
@@ -71,6 +71,14 @@ export const MANIFEST: Manifest = manifestSchema.parse({
        would let any page read the write ticket. See vite.config.ts. */
     storage: true,
     prompt: false,
+  },
+  /* The folder under `.kehikot/` this module is the only writer of (protocol 2.85.0), so a module
+     that shows the project's files can say whose a file is without naming this one. */
+  services: {
+    [MODULE_FOLDERS]: {
+      name: 'Slides',
+      folders: [{ folder: moduleFolder(ID), says: 'The presentation decks, one Markdown file per deck with its speaker notes and citations, and the history of agent writes.', derived: false }],
+    },
   },
   health: '/healthz',
 })
