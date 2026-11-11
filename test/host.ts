@@ -1,6 +1,6 @@
 import { resolveDoorProject } from 'kehikot-module-protocol/serve'
 
-import { setHostResolve } from '../host-ask.ts'
+import { setDocuments, setHostResolve, type Documents } from '../host-ask.ts'
 
 /** The host holds every folder it is asked about, at that path. What every test but the ones about the host starts from. */
 export const holdsEveryFolder = () => setHostResolve(async (folder) => ({ ok: true, path: folder }))
@@ -39,3 +39,10 @@ export function noHost(): void {
     }),
   )
 }
+
+/** Nothing provides the project's document: what every test but the ones about it starts from. */
+export const noDocuments = () => setDocuments(async () => null)
+
+/** A document provider keeps its documents under `folder`, relative to the project. */
+export const documentsUnder = (folder: string, documents: Partial<Documents> = {}) =>
+  setDocuments(async () => ({ name: 'Writer', folder, sections: 'sections_of', source: 'source_of', ...documents }))

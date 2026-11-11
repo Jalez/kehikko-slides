@@ -21,7 +21,7 @@ import { answerProposalTool, decideProposal, openProposals, proposalTools, settl
 import { placeToken, rememberFiler } from './digest.ts'
 import { PROPOSALS, SITE } from './proposals.ts'
 import { POINTER, POINTER_DID, citedStream, citing, followPointer, followTalk, heardPointer, moveTalk, pointAt, poke, watchDecks } from './live.ts'
-import { resolveFolder, setHostResolve } from './host-ask.ts'
+import { documentsOf, resolveFolder, setHostResolve, type Documents } from './host-ask.ts'
 import { ID, MANIFEST, VERSION } from './manifest.ts'
 import {
   NO_PROJECT,
@@ -147,11 +147,11 @@ function tools() {
       /* Reads one file. */
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description:
-        'One deck: a numbered list of its slides (layout, headline, linked paper section, whether it has notes), '
+        'One deck: a numbered list of its slides (layout, headline, linked document section, whether it has notes), '
         + 'each slide\'s citations with the lines of the file they were found on and whether they still hold, '
         + 'then its whole Markdown. Read it before editing; the numbers are what edit_slide, link_slide and cite_slide take. '
-        + 'A citation marked ADRIFT cites words its file no longer has: the paper changed under the slide, so check '
-        + 'the slide\'s claim against the paper before fixing the quote.',
+        + 'A citation marked ADRIFT cites words its file no longer has: the document changed under the slide, so check '
+        + 'the slide\'s claim against the document before fixing the quote.',
       inputSchema: { type: 'object', properties: { ...PROJECT, ...DECK }, required: ['project', 'deck'] },
     },
     {
@@ -159,9 +159,10 @@ function tools() {
       /* Writes a new file and never over one: a title already taken is given another slug. */
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description:
-        'Start a deck with one title slide. Its slug is made from the title. To draft a talk from a paper: call the '
-        + 'paper module’s list_sections and read_paper, create the deck, write it with write_deck (one or more slides '
-        + 'per section, speaker notes after a Notes: line), then link each slide to its section with link_slide.',
+        'Start a deck with one title slide. Its slug is made from the title. To draft a talk from a document: read '
+        + 'the document’s sections and source, as the document provider’s tools give them, create the deck, write it '
+        + 'with write_deck (one or more slides per section, speaker notes after a Notes: line), then link each slide '
+        + 'to its section with link_slide.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -212,9 +213,9 @@ function tools() {
       /* Sets one directive on one slide. Nothing of the slide's own text is removed. */
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description:
-        'Link a slide to a section of the paper, so the slides follow the paper as it is read and the paper turns '
-        + 'to that section when the slide is shown. path and title are a section exactly as the paper module’s '
-        + 'list_sections gives them: the file relative to the project, and the heading’s text.',
+        'Link a slide to a section of the document, so the slides follow the document as it is read and the document '
+        + 'turns to that section when the slide is shown. path and title are a section exactly as the document '
+        + 'provider’s sections tool gives them: the file relative to the project, and the heading’s text.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -222,7 +223,7 @@ function tools() {
           ...DECK,
           ...INDEX,
           path: { type: 'string', description: 'The section’s file, relative to the project (e.g. chapters/2_bridge.tex).' },
-          title: { type: 'string', description: 'The section heading, exactly as the paper spells it.' },
+          title: { type: 'string', description: 'The section heading, exactly as the document spells it.' },
           ...AGENT_ARG,
         },
         required: ['project', 'deck', 'index', 'path', 'title'],
@@ -235,7 +236,7 @@ function tools() {
       description:
         'Say exactly which words of a file a claim on a slide rests on. Adds [^n] after the slide words you name in '
         + 'at (or nowhere, citing the slide as a whole, when at is left out) and a source line under the slide\'s '
-        + 'Sources:. quote must be the file\'s own words — the .tex source as the paper module\'s read_source shows '
+        + 'Sources:. quote must be the file\'s own words — the source as the document provider\'s source tool shows '
         + 'it, markup and all; line breaks and runs of spaces need not match. It is refused unless the words are in '
         + 'the file exactly once, so a citation cannot be written that already points nowhere. Citing the same words '
         + 'twice on a slide reuses their number. Recorded in the history, so the person can undo it.',
@@ -388,10 +389,10 @@ function citationLine(one: CitationView): string {
   return `     [^${one.label}] ${one.path} — UNREADABLE, no such file inside the project: "${said}"`
 }
 
-function readDeckText(project: string, slug: string): string {
+function readDeckText(project: string, slug: string, documents: Documents | null): string {
   const deck = must(readDeck(project, slug), 'read_deck')
   const parsed = parseDeck(deck.text, slug)
-  const cited = citations(project, slug)
+  const cited = citations(project, slug, documents?.folder ?? null)
   const found = cited.ok ? cited.value : []
   const lines = parsed.slides.flatMap((slide, i) => {
     const parts = [`${i}. ${slide.layout}`, slideHeadline(slide) || '(empty)']
@@ -416,16 +417,26 @@ function readDeckText(project: string, slug: string): string {
 }
 
 /** A section path as it is written into a deck: relative to the project, inside it. */
-function sectionPath(project: string, raw: string): string {
+function sectionPath(project: string, raw: string, documents: Documents | null): string {
   const root = must(projectRoot(project), 'link_slide')
   let path = raw.replace(/\\/g, '/')
   /* Either spelling of the project: as it was given, or its realpath (/tmp and /private/tmp). */
   if (isAbsolute(path)) path = [relative(root, path), relative(project, path)].find((one) => !one.startsWith('..')) ?? '..'
   path = path.replace(/^\.\//, '')
   if (!path || path.startsWith('..') || isAbsolute(path)) {
-    throw new Error(`"${raw}" is not a file inside this project. Give the path list_sections gives, relative to the project. Nothing was written.`)
+    throw new Error(`"${raw}" is not a file inside this project. Give the path ${sectionsSay(documents)} gives, relative to the project. Nothing was written.`)
   }
   return path
+}
+
+/** How the document's sections are named in an error: by the provider's own name and tool, when there is one. */
+function sectionsSay(documents: Documents | null): string {
+  return documents ? `${documents.name}'s ${documents.sections}` : 'the document\'s sections list'
+}
+
+/** How the document's source is named in an error. */
+function sourceSays(documents: Documents | null): string {
+  return documents ? `${documents.name}'s ${documents.source}` : 'the document\'s source'
 }
 
 function directiveSafe(what: string, value: string): void {
@@ -440,17 +451,22 @@ function directiveSafe(what: string, value: string): void {
  */
 async function callResolved(name: string, args: Record<string, unknown>, place: string | null = null): Promise<string> {
   const named = str(args.project, 1000)
-  if (!named) return call(name, args)
+  if (!named) return call(name, args, null)
   const at = await projectAt(named)
   if (!at.ok) throw new Error(at.why)
+  /* Only the tools that read a project's files need to know where its document is kept. */
+  const documents = READS_DOCUMENTS.has(name) ? await documentsOf(at.path) : null
   const proposed = await answerProposalTool(SITE, PROPOSALS, name, { ...args, project: at.path })
   /* Whose it is, so the session hears once what became of its proposals (`digest.ts`). */
   if (proposed && name === 'propose_change') rememberFiler(proposed, place)
-  const text = proposed ?? call(name, { ...args, project: at.path })
+  const text = proposed ?? call(name, { ...args, project: at.path }, documents)
   return at.movedFrom ? `${text}\n\n${DOOR_PROJECT_SAYS.followed(at.movedFrom, at.path)}` : text
 }
 
-function call(name: string, args: Record<string, unknown>): string {
+/** The tools that read or name the document's files. */
+const READS_DOCUMENTS = new Set(['read_deck', 'link_slide', 'cite_slide'])
+
+function call(name: string, args: Record<string, unknown>, documents: Documents | null): string {
   if (name === 'list_decks') {
     const project = projectOf(args, name)
     const epic = str(args.epic, 80)
@@ -467,7 +483,7 @@ function call(name: string, args: Record<string, unknown>): string {
       .join('\n')
   }
 
-  if (name === 'read_deck') return readDeckText(projectOf(args, name), deckOf(args))
+  if (name === 'read_deck') return readDeckText(projectOf(args, name), deckOf(args), documents)
 
   if (name === 'create_deck') {
     const project = projectOf(args, name)
@@ -506,9 +522,9 @@ function call(name: string, args: Record<string, unknown>): string {
         throw new Error('edit_slide takes one slide, and that markdown has a --- line in it, which would split it in two. Use write_deck to add slides. Nothing was written.')
       }
     } else {
-      const path = sectionPath(project, str(args.path, 1000))
+      const path = sectionPath(project, str(args.path, 1000), documents)
       const title = str(args.title, 300)
-      if (!title) throw new Error('link_slide needs title: the section heading, as list_sections gives it. Nothing was written.')
+      if (!title) throw new Error(`link_slide needs title: the section heading, as ${sectionsSay(documents)} gives it. Nothing was written.`)
       directiveSafe('path', path)
       directiveSafe('title', title)
       const range = ranges[index]!
@@ -533,13 +549,13 @@ function call(name: string, args: Record<string, unknown>): string {
     const root = must(projectRoot(project), name)
     const text = must(readDeck(project, slug), name).text
     const index = indexOf(args, slideRanges(text.replace(/\r\n/g, '\n')).length, slug)
-    const path = sectionPath(project, str(args.path, 1000))
+    const path = sectionPath(project, str(args.path, 1000), documents)
     const quote = typeof args.quote === 'string' ? args.quote : ''
-    const file = citedText(root, path)
-    if (file === null) throw new Error(`"${path}" is not a readable file inside this project. Give the path relative to the project, as list_sections gives it. Nothing was written.`)
+    const file = citedText(root, path, documents?.folder ?? null)
+    if (file === null) throw new Error(`"${path}" is not a readable file inside this project. Give the path relative to the project, as ${sectionsSay(documents)} gives it. Nothing was written.`)
     const found = resolveSource({ label: '', path, quote }, file)
     if (found.status === 'adrift') {
-      throw new Error(`Those words are not in ${path}. Quote the file's own text, as read_source shows it (LaTeX markup included); only whitespace may differ. Nothing was written.`)
+      throw new Error(`Those words are not in ${path}. Quote the file's own text, as ${sourceSays(documents)} shows it (markup included); only whitespace may differ. Nothing was written.`)
     }
     if (found.status === 'ambiguous') throw new Error(`Those words occur ${found.count} times in ${path}. Quote more of the sentence so they occur once. Nothing was written.`)
     const at = typeof args.at === 'string' && args.at.length ? args.at : null
@@ -735,7 +751,7 @@ export async function answer(
     const refused = refuseTicket(query.get('ticket') ?? ticket, TICKET, 'That picture was not asked for by this app’s own page.')
     if (refused) return refused
     const where = await projectAt(query.get('project'))
-    const picture = where.ok ? pictureBytes(where.path, query.get('path') ?? '') : null
+    const picture = where.ok ? pictureBytes(where.path, query.get('path') ?? '', (await documentsOf(where.path))?.folder ?? null) : null
     if (!picture) return bad('There is no such picture in this project.', 404)
     return { status: 200, body: null, raw: picture, headers: PICTURE_HEADERS }
   }
@@ -826,7 +842,7 @@ export async function answer(
   }
 
   if (path === PATHS.citations && method === 'GET') {
-    const found = citations(project, slug)
+    const found = citations(project, slug, (await documentsOf(project))?.folder ?? null)
     /* The files found are the ones watched while a page follows this deck (`live.ts`, `citing`). */
     const root = found.ok ? projectRoot(project) : null
     if (found.ok && root?.ok) citing(root.value, slug, found.value.flat().map((one) => one.path))
@@ -834,7 +850,7 @@ export async function answer(
   }
   if (path === PATHS.source && method === 'GET') {
     const number = (name: string) => Number(query.get(name) ?? NaN)
-    return done(citedSlice(project, query.get('path') ?? '', number('from'), number('to')), (text) => ({ text }))
+    return done(citedSlice(project, query.get('path') ?? '', number('from'), number('to'), (await documentsOf(project))?.folder ?? null), (text) => ({ text }))
   }
 
   if (path === PATHS.present && method === 'POST') {

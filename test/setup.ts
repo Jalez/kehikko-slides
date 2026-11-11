@@ -9,5 +9,6 @@ if (document.compatMode !== 'CSS1Compat') Object.defineProperty(document, 'compa
 
 /* The host, for the tests that are not about it: it holds every folder it is asked about. A test of what the
    host says sets its own (`test/host.ts`) and puts this back. */
-const { holdsEveryFolder } = await import('./host.ts')
+const { holdsEveryFolder, noDocuments } = await import('./host.ts')
 holdsEveryFolder()
+noDocuments()

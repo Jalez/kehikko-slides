@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import { WELL_KNOWN } from 'kehikot-module-protocol'
 import { parseDeck } from '../deck/format.ts'
 import { MANIFEST, PICTURE_HEADERS, TICKET, deckStreams as stream } from '../doors.ts'
 import { answer } from './now.ts'
+import { documentsUnder, noDocuments } from './host.ts'
 import { ID } from '../manifest.ts'
 import { createDeck, history, readDeck } from '../store.ts'
 
@@ -327,6 +328,39 @@ describe('citations', () => {
     expect((await read({ project: '/', path: 'etc/hosts' }))?.status).not.toBe(200)
     /* An agent's citation is confined the same way. */
     expect((await tool('cite_slide', { project: dir, deck: 'd', index: 0, path: '.env', quote: 'TOKEN=1' }))).toMatchObject({ error: true, text: expect.stringContaining('not a readable file') })
+  })
+})
+
+describe('the document a project keeps', () => {
+  const WORDS = 'The mean rating was highest.\n'
+
+  async function kept(name: string): Promise<string> {
+    const dir = project(name)
+    mkdirSync(join(dir, '.kehikot/writer/talk'), { recursive: true })
+    writeFileSync(join(dir, '.kehikot/writer/talk/main.tex'), WORDS)
+    await tool('create_deck', { project: dir, title: 'D' })
+    await tool('write_deck', { project: dir, deck: 'd', markdown: '# One\n- Mean was highest\n', summary: 'draft' })
+    return dir
+  }
+
+  afterEach(noDocuments)
+
+  test('the folder the document provider names is cited from; nothing else under a dot-folder is', async () => {
+    const dir = await kept('docs-provided')
+    documentsUnder('.kehikot/writer')
+    const done = await tool('cite_slide', { project: dir, deck: 'd', index: 0, path: '.kehikot/writer/talk/main.tex', quote: 'mean rating' })
+    expect(done.error).toBe(false)
+    expect((await answer('GET', '/api/source', q({ project: dir, path: '.kehikot/writer/talk/main.tex', from: '4', to: '8' }), null, TICKET))?.body).toEqual({ ok: true, text: 'mean' })
+    /* A wrong quote is refused in the provider's own words. */
+    expect(await tool('cite_slide', { project: dir, deck: 'd', index: 0, path: '.kehikot/writer/talk/main.tex', quote: 'It rose' })).toMatchObject({ error: true, text: expect.stringContaining("Writer's source_of") })
+  })
+
+  test('with no document provider, the folder is a dot-folder like any other', async () => {
+    const dir = await kept('docs-none')
+    const refused = await tool('cite_slide', { project: dir, deck: 'd', index: 0, path: '.kehikot/writer/talk/main.tex', quote: 'mean rating' })
+    expect(refused.error).toBe(true)
+    expect(refused.text).toMatch(/not a readable file.*the document's sections list/)
+    expect((await answer('GET', '/api/source', q({ project: dir, path: '.kehikot/writer/talk/main.tex', from: '4', to: '8' }), null, TICKET))?.status).toBe(404)
   })
 })
 
