@@ -7,7 +7,7 @@ import type { Host } from '../src/wire/use-kehikot.ts'
 import { FakeEditor, fakeDecks, host, item, openDeck, pane, press } from './fakes.tsx'
 
 /**
- * What the container keeps (protocol 2.51.0): the open deck, the pane and following come back from
+ * What the container keeps (protocol 2.51.0): the place’s deck, the pane and following come back from
  * the host's kept value, and a press writes them back with `remember`, the other keys kept. The
  * stand-in behaves as the protocol's `useHost` does: `remember` updates `kept` for the next render.
  */
@@ -41,7 +41,7 @@ function keeping(start: unknown) {
   return { Kept, remembered }
 }
 
-test('the open deck, the pane and following come back from what the host kept', async () => {
+test('the place’s deck, the pane and following come back from what the host kept', async () => {
   const { Kept } = keeping({ deck: 'other', mode: 'preview', following: false })
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
   await waitFor(() => expect(openDeck()).toBe('Another talk'))
@@ -58,7 +58,7 @@ test('nothing kept: the open epic’s first deck, the editor, following', async 
   await waitFor(() => expect(item<'toggle'>('following')?.checked).toBe(true))
 })
 
-test('presses write the deck, the pane and following back, keeping what else was kept', async () => {
+test('presses write the place’s deck, the pane and following back, keeping what else was kept', async () => {
   const { Kept, remembered } = keeping({ other: 1 })
   render(<Kept fake={fakeDecks({}, { list: LIST })} />)
   await waitFor(() => expect(openDeck()).toBe('Defence'))
@@ -67,5 +67,5 @@ test('presses write the deck, the pane and following back, keeping what else was
   await waitFor(() => expect(item('mode')).toBeDefined())
   press('mode', 'preview')
   press('following', false)
-  await waitFor(() => expect(remembered.at(-1)).toEqual({ other: 1, deck: 'other', mode: 'preview', following: false }))
+  await waitFor(() => expect(remembered.at(-1)).toEqual({ other: 1, places: { 'write-chapter-two': 'other' }, mode: 'preview', following: false }))
 })

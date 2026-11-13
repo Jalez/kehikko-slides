@@ -40,6 +40,8 @@ export type Host = Pick<ProtocolHost, 'where' | 'project' | 'projectPath' | 'pro
   /** Protocol 2.84.0: say the page is reading what a switch asks for; the host may cover it in these words. */
   loading?: ProtocolHost['loading']
   presses: MutableRefObject<Press | null>
+  /** The space the person stands in (`context.space`, protocol 2.89.0); null on "All spaces" and from a host that says only `epic` and `parts`. Optional, so a screen renders in a test without it. */
+  space?: { path: readonly { id: string }[]; picked?: readonly string[] } | null
   pressed: boolean
   /** `address.open` (protocol 2.16.0): present with a host that greeted; `answers` says whether it takes addresses. */
   openAddress?: ProtocolHost['openAddress']
@@ -72,7 +74,7 @@ export function useKehikot(): Host {
     },
   }, /* The kept view (protocol 2.70.0): the pane. Not the deck (kept by its slug already, and an index here), nor following (a press starts it). */ { keepView: { except: ['deck', 'following'] } })
   /* The same object the protocol hands back, with three more fields: a screen reads it as one thing. */
-  return Object.assign(host, { presses, pressed })
+  return Object.assign(host, { presses, pressed, space: host.context?.space ?? null })
 }
 
 /**
