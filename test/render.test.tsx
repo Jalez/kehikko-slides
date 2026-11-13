@@ -126,18 +126,26 @@ describe('following the epic', () => {
     await shown('Catalog')
   })
 
-  test('an epic with no deck leaves the open deck where it is', async () => {
+  test('an epic with no deck shows the empty place, not the deck of the epic before', async () => {
     const run = drawOn('durable-writes')
     await shown('Durable writes')
     run.turn('nothing-here')
-    await pause(10)
-    expect(open()).toBe('Durable writes')
-    run.turn(null)
-    await pause(10)
-    expect(open()).toBe('Durable writes')
+    await waitFor(() => expect(screen.getByText('No deck in this space yet')).toBeDefined())
+    expect(open()).toBeUndefined()
+    expect(document.querySelector('[data-pane]')).toBeNull()
+    run.turn('durable-writes')
+    await shown('Durable writes')
+    expect(screen.queryByText('No deck in this space yet')).toBeNull()
   })
 
-  test('a deck picked by hand stays open until the epic changes again', async () => {
+  test('the project as a whole, with no deck of its own, says so too', async () => {
+    const run = drawOn('durable-writes')
+    await shown('Durable writes')
+    run.turn(null)
+    await waitFor(() => expect(screen.getByText('No deck in this project yet')).toBeDefined())
+  })
+
+  test('a deck picked by hand is that place’s own: it is back when the place is', async () => {
     const run = drawOn('catalog')
     await shown('Catalog')
     await pick('Durable writes')
@@ -148,11 +156,15 @@ describe('following the epic', () => {
     await pause(10)
     expect(open()).toBe('Durable writes')
 
+    /* Another place is its own: its first deck, and a pick made there is kept there. */
     run.turn('durable-writes')
+    await shown('Durable writes')
     await pick('Catalog, the long one')
     await shown('Catalog, the long one')
     run.turn('catalog')
-    await shown('Catalog')
+    await shown('Durable writes')
+    run.turn('durable-writes')
+    await shown('Catalog, the long one')
   })
 })
 

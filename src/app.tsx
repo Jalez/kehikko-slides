@@ -13,6 +13,7 @@ import { headerOf, type Work } from '@/header'
 import { HeaderMenu } from '@/header-menu'
 import { HistoryDialog } from '@/history'
 import { OpenAddressContext, openerOf } from '@/lib/links'
+import { deckAt, homeOf, isKept, placeKey, type Kept, type Place } from '@/lib/places'
 import { PictureProject } from '@/slides/markdown'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 import { useKeeps, useKehikot, type Host, type Press } from '@/wire/use-kehikot'
@@ -64,7 +65,19 @@ export function Screen({
   /* Kept per container (protocol 2.51.0): the deck this container shows is a way of looking at the
      project's decks, so it is back after a restart. The decks themselves are files on disk. */
   const keeps = useKeeps(host)
-  const [open, setOpen] = useKept<string | null>(keeps, 'deck', null, (value) => value === null || typeof value === 'string')
+  /* Each place keeps its own deck, under the place's key. `deck`, the one deck this container used to keep, is
+     what the place the page first arrives on had, until the first write of `places`. */
+  const [chosen, setChosen] = useKept<Kept | null>(keeps, 'places', null, (value) => value === null || isKept(value))
+  const legacy = isRecord(keeps.kept) && typeof keeps.kept.deck === 'string' ? keeps.kept.deck : null
+  const pickedIds = host.parts.filter((part) => part.picked).map((part) => part.id)
+  const spaceIds = (host.space?.path ?? []).map((step) => step.id)
+  const spacePicked = host.space?.picked ?? []
+  const place: Place = useMemo(
+    () => ({ epic: host.epic, parts: pickedIds, space: spaceIds.length ? { path: spaceIds.map((id) => ({ id })), picked: spacePicked } : null }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [host.epic, pickedIds.join(','), spaceIds.join('.'), spacePicked.join(',')],
+  )
+  const key = placeKey(place)
   const [state, setState] = useState<SaveState | null>(null)
   const [watched, setWatched] = useState<WatchEvent | null>(null)
   /* Bumped to remount the workspace with what is on disk (after an undo). */
@@ -102,33 +115,18 @@ export function Screen({
     })
   }, [project, decks, refresh])
 
-  const ordered = useMemo(() => byEpic(list ?? [], host.epic), [list, host.epic])
+  const ordered = useMemo(() => byEpic(list ?? [], homeOf(place).epic), [list, place])
 
-  /* Keep something open: the open deck while it exists, else the first in order. */
+  /* The deck this place shows, worked out from what is on disk and what the place kept, so arriving
+     somewhere is the same render as the place changing: nothing of the place before is ever drawn.
+     A place with no deck has none open, and says so. */
+  const keptHere = useMemo(() => chosen ?? (legacy ? { [key]: legacy } : {}), [chosen, legacy, key])
+  const open: string | null = list && !(failed && !list.length) ? deckAt(list, place, keptHere) : null
+  const setOpen = useCallback((slug: string) => setChosen((was) => ({ ...(was ?? {}), [key]: slug })), [setChosen, key])
+  /* What was worked out is kept, so a deck made first or removed elsewhere does not move the one on screen. */
   useEffect(() => {
-    /* A list that could not be read is no reason to forget the kept deck. */
-    if (!list || (failed && !list.length)) return
-    if (open && list.some((one) => one.slug === open)) return
-    setOpen(ordered[0]?.slug ?? null)
-  }, [list, ordered, open, failed, setOpen])
-
-  /* Follow the epic: when the host turns to another, open that epic's first
-     deck. One with no deck leaves the open deck in place, and a deck picked by
-     hand stays until the epic changes again. */
-  /* Undefined until the first list: the epic the page arrives on is not a turn, so a kept deck is not
-     replaced by that epic's first. */
-  const followed = useRef<string | null | undefined>(undefined)
-  useEffect(() => {
-    if (!list) return
-    if (followed.current === undefined) {
-      followed.current = host.epic
-      return
-    }
-    if (followed.current === host.epic) return
-    followed.current = host.epic
-    const first = ordered[0]
-    if (first && host.epic !== null && first.epic === host.epic) setOpen(first.slug)
-  }, [list, ordered, host.epic, setOpen])
+    if (open && keptHere[key] !== open) setOpen(open)
+  }, [open, keptHere, key, setOpen])
 
   const create = async (title: string) => {
     if (!project) return false
@@ -163,6 +161,7 @@ export function Screen({
     else hostLoading?.(LOADING_DECK)
   }, [drawn, hostReady, hostLoading])
 
+  const home = homeOf(place)
   const here = ordered.find((one) => one.slug === open) ?? null
   const retitle = async (title: string) => {
     if (!project || !here) return false
@@ -301,7 +300,7 @@ export function Screen({
         {cover ? (
           <Cover state={cover} name="Slides" onRetry={() => void refresh()} />
         ) : !project || !list ? null : !open ? (
-          <FirstDeck onCreate={create} />
+          <EmptyPlace onCreate={create} others={ordered} onOpen={setOpen} here={home.epic !== null || spaceIds.length > 0} />
         ) : (
           <PictureProject.Provider value={project}>
             <OpenAddressContext.Provider value={openAddress}>
@@ -377,35 +376,69 @@ function SaveWord({ state }: { state: SaveState }) {
   )
 }
 
-function FirstDeck({ onCreate }: { onCreate(title: string): Promise<boolean> }) {
+/**
+ * A place with no deck. It says so in the place's words, shows how to make one, what an agent can do,
+ * and offers the project's other decks to open here: the person's way on, rather than a blank.
+ */
+function EmptyPlace({
+  onCreate,
+  others,
+  onOpen,
+  here,
+}: {
+  onCreate(title: string): Promise<boolean>
+  others: DeckSummary[]
+  onOpen(slug: string): void
+  /** Whether the place is a space, rather than the project as a whole. */
+  here: boolean
+}) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
   return (
-    <form
-      className="m-auto flex w-full max-w-xs flex-col gap-2 p-6"
-      onSubmit={(event) => {
-        event.preventDefault()
-        setBusy(true)
-        void onCreate(title.trim() || 'Untitled deck').finally(() => setBusy(false))
-      }}
-    >
-      <p className="text-xs font-medium">No decks yet</p>
+    <div data-testid="empty-place" className="m-auto flex w-full max-w-xs flex-col gap-3 overflow-auto p-6">
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          setBusy(true)
+          void onCreate(title.trim() || 'Untitled deck').finally(() => setBusy(false))
+        }}
+      >
+        <p className="text-xs font-medium">{here ? 'No deck in this space yet' : 'No deck in this project yet'}</p>
+        <p className="text-muted-foreground text-xs">
+          A deck is one Markdown file in this project. Name one to start it {here ? 'here' : 'now'}; you can rename it later.
+        </p>
+        <div className="flex gap-2">
+          <Input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Untitled deck"
+            aria-label="deck title"
+            maxLength={80}
+            className="h-8 text-xs"
+          />
+          <Button type="submit" size="sm" className="h-8 text-xs" disabled={busy}>
+            Create deck
+          </Button>
+        </div>
+      </form>
       <p className="text-muted-foreground text-xs">
-        A deck is one Markdown file in this project. Name the first one; you can rename it later.
+        An agent can draft one for you: ask it for a deck, and it writes the Markdown with create_deck and write_deck.
       </p>
-      <div className="flex gap-2">
-        <Input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Untitled deck"
-          aria-label="deck title"
-          maxLength={80}
-          className="h-8 text-xs"
-        />
-        <Button type="submit" size="sm" className="h-8 text-xs" disabled={busy}>
-          Create deck
-        </Button>
-      </div>
-    </form>
+      {others.length ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-muted-foreground text-xs">Or open one of this project’s decks here</p>
+          {others.slice(0, 6).map((one) => (
+            <Button key={one.slug} type="button" variant="outline" size="sm" className="h-7 justify-start text-xs" onClick={() => onOpen(one.slug)}>
+              {one.title}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

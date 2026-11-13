@@ -1,6 +1,6 @@
 {
   "name": "kehikko-slides",
-  "version": "1.11.1",
+  "version": "1.11.2",
   "private": true,
   "type": "module",
   "description": "Slides, a module a kehikko host frames. An app: its own store, its own page, its own port.",
