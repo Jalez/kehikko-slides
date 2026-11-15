@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useEffect, useRef } from 'react'
 
-import type { DeckSummary, HistoryEntry, PointerState, PresentState, ProposalView, Version, WatchEvent } from '../deck/api.ts'
+import type { AudienceLink, DeckSummary, HistoryEntry, PointerState, PresentState, ProposalView, Version, WatchEvent } from '../deck/api.ts'
 import { Screen } from '../src/app.tsx'
 import type { EditorProps } from '../src/editor/deck-editor.tsx'
 import type { Decks, SaveResult } from '../src/wire/decks.ts'
@@ -120,6 +120,8 @@ export function fakeDecks(
   const talkers = new Set<(state: PresentState) => void>()
   const pointers = new Set<(state: PointerState) => void>()
   const citers = new Set<() => void>()
+  const audience = new Set<(link: AudienceLink) => void>()
+  const link = { now: { path: `/audience/${'k'.repeat(32)}`, viewers: 0 } as AudienceLink }
   const disk = { text: start.text ?? DECK, version: (start.version ?? 'v1') as Version }
   let list: DeckSummary[] = start.list ?? [
     { slug: 'defence', title: 'Defence', epic: 'write-chapter-two', slides: 3, updated: 0 },
@@ -177,6 +179,18 @@ export function fakeDecks(
       record('followTalk', project, slug)
       talkers.add(onState)
       return () => talkers.delete(onState)
+    },
+    followAudience(project, slug, onLink) {
+      record('followAudience', project, slug)
+      audience.add(onLink)
+      onLink(link.now)
+      return () => audience.delete(onLink)
+    },
+    async renewAudience(project, slug) {
+      record('renewAudience', project, slug)
+      link.now = { path: `/audience/${'n'.repeat(32)}`, viewers: 0 }
+      for (const hear of audience) hear(link.now)
+      return link.now
     },
     followPointer(project, slug, onPoint, presenting) {
       record('followPointer', project, slug, presenting)

@@ -7,6 +7,7 @@ import { SlideView } from '@/slides/slide-view'
 import { decks as realDecks, type Decks } from '@/wire/decks'
 
 import { parseDeck, slideKept } from '../deck/format.ts'
+import { AudienceControl } from './audience-link.tsx'
 import { useProjectNow } from './project-now.ts'
 import { step, talkKey, useTalk } from './talk.ts'
 
@@ -96,6 +97,8 @@ export function PresenterView({
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      /* Typing in the audience link's field is not a move. */
+      if (event.target instanceof HTMLInputElement) return
       const key = talkKey(event.key)
       if (!key || key === 'leave' || event.metaKey || event.ctrlKey || event.altKey) return
       event.preventDefault()
@@ -125,6 +128,7 @@ export function PresenterView({
           {position.blank ? ' · blank' : ''}
         </span>
         <div className="ml-auto flex items-center gap-1">
+          <AudienceControl decks={decks} project={project} slug={slug} />
           <span data-testid="timer" className="font-mono text-lg tabular-nums" aria-label="elapsed">
             {clock(elapsed)}
           </span>

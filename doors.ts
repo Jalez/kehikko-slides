@@ -4,7 +4,8 @@ import { DOOR_PROJECT_SAYS, KEHIKOT_DIR, PLACE_PARAM, linesOf, resolveSource, ty
 
 import { establishBuild, mintTicket, refuseTicket, streams, type Reply, type Stream } from 'kehikot-module-protocol/serve'
 
-import { PATHS, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
+import { PATHS, type AudienceLink, type DeckChange, type PointerState, type PresentState } from './deck/api.ts'
+import { presenting, renew } from './audience.ts'
 import { addCitation } from './deck/cite.ts'
 import {
   deckProblems,
@@ -33,6 +34,7 @@ import {
   deleteDeck,
   history,
   listDecks,
+  PICTURE_HEADERS,
   pictureBytes,
   projectRoot,
   readDeck,
@@ -691,17 +693,9 @@ function mcp(rpc: Rpc, place: string | null = null): Reply | Promise<Reply> {
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 /** The doors under /api/ that are about one project, besides the picture (which is asked the same way). */
-const PROJECT_DOORS = new Set<string>([PATHS.decks, PATHS.deck, PATHS.history, PATHS.undo, PATHS.citations, PATHS.source, PATHS.present, PATHS.pointer, PATHS.proposals, PATHS.proposal])
+const PROJECT_DOORS = new Set<string>([PATHS.decks, PATHS.deck, PATHS.history, PATHS.undo, PATHS.citations, PATHS.source, PATHS.present, PATHS.pointer, PATHS.proposals, PATHS.proposal, PATHS.audience])
 
-/** What rides with every picture. `style-src` lets an SVG's own `<style>` colour it; nothing in it can load or run. */
-export const PICTURE_HEADERS: Record<string, string> = {
-  'cache-control': 'private, max-age=60',
-  'x-content-type-options': 'nosniff',
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-  'cross-origin-resource-policy': 'same-origin',
-  /* An `<img>` takes no notice of this; an address opened on its own is saved rather than shown. */
-  'content-disposition': 'attachment',
-}
+export { PICTURE_HEADERS }
 
 function done<T>(result: Result<T>, shape: (value: T) => Record<string, unknown>): Reply {
   return result.ok ? ok(shape(result.value)) : refused(result)
@@ -863,6 +857,18 @@ export async function answer(
     return ok({ state: moveTalk(root.value, slug, index, body?.blank === true) })
   }
 
+  /*
+   * A new audience link, and the old one is over (`audience.ts`). The presenter's window asks when the person thinks the
+   * link has got out; every window of the presenter is handed the new one on its stream.
+   */
+  if (path === PATHS.audience && method === 'POST') {
+    const root = projectRoot(project)
+    if (!root.ok) return refused(root)
+    const why = badSlug(slug)
+    if (why) return bad(why)
+    return ok({ link: renew(root.value, slug) })
+  }
+
   /* A page saying what it did with a pointing. Nothing is kept: it is handed to the show_slide waiting for it. */
   if (path === PATHS.pointer && method === 'POST') {
     const root = projectRoot(project)
@@ -925,10 +931,45 @@ export function deckStreams(
 }
 
 /**
+ * The presenter's side of the audience view: `GET /api/audience?project&slug&ticket`. The link is a secret, so this is
+ * behind the page's ticket like every read here, carried in the address because an `EventSource` sends no header. The
+ * stream being open is what tells the audience the presenter is there (`presenting`).
+ */
+export function audienceStream(
+  method: string,
+  path: string,
+  query: URLSearchParams,
+  emit: (event: AudienceLink) => void,
+  ticket: string | null,
+): { reply: Reply } | { close: () => void } | null {
+  if (method !== 'GET' || path !== PATHS.audience) return null
+  const stranger = refuseTicket(query.get('ticket') ?? ticket, TICKET, 'That was not asked by this app’s own page.')
+  if (stranger) return { reply: stranger }
+  const slug = query.get('slug') ?? ''
+  const why = badSlug(slug)
+  if (why) return { reply: bad(why) }
+  let close = (): void => {}
+  let gone = false
+  void projectAt(query.get('project')).then((at) => {
+    if (gone || !at.ok) return
+    const root = projectRoot(at.path)
+    if (!root.ok) return
+    close = presenting(root.value, slug, emit)
+    if (gone) close()
+  })
+  return {
+    close: () => {
+      gone = true
+      close()
+    },
+  }
+}
+
+/**
  * The doors' one stream option: the deck, talk and pointer streams above, and beside them
  * `/api/citations/events` (`live.ts`), which tells an open deck that a file it cites changed, so its
  * page looks for the citations again instead of asking on a clock. The first that answers wins.
  */
-export const stream: Stream = streams(deckStreams, citedStream)
+export const stream: Stream = streams(deckStreams, citedStream, audienceStream)
 
 export { MANIFEST }

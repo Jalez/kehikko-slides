@@ -57,7 +57,57 @@ export const PATHS = {
   proposals: '/api/proposals',
   /** POST {@link AnswerProposal} — accept or decline one. */
   proposal: '/api/proposal',
+  /**
+   * The presenter's side of the audience view. GET ?project&slug&ticket — server-sent events of {@link AudienceLink}: the
+   * link to hand out (made, or the one already made for this deck) and how many windows are following it. The stream being
+   * open is what says the presenter is there. POST {@link RenewAudience} makes a new link and ends the old one.
+   */
+  audience: '/api/audience',
 } as const
+
+/**
+ * The audience view: a page of its own at `/audience/<key>` that shows only the slide the presenter is on. It is
+ * not under `/api/`: the key in the address is its only credential, and nothing the page is given can write.
+ *   GET  /audience/<key>         the page.
+ *   GET  /audience/<key>/events  server-sent events of {@link AudienceEvent}; the whole state first, then every change.
+ *   GET  /audience/<key>/alive   200 while the link works, 404 once it does not.
+ *   GET  /audience/<key>/asset?path=  a picture the shown slide names.
+ * Every other method is refused with 405.
+ */
+export const AUDIENCE_PREFIX = '/audience/'
+
+/** What the presenter's window is told: the link's path (add the page's own origin) and who follows it. */
+export interface AudienceLink {
+  path: string
+  viewers: number
+}
+
+export interface RenewAudience {
+  project: string
+  slug: string
+}
+
+/** The one slide an audience page is sent: what it draws and nothing else. Notes, sources and section links never leave the server. */
+export interface AudienceSlide {
+  layout: 'title' | 'bullets' | 'two-column' | 'image' | 'quote'
+  body: string
+}
+
+/**
+ * What an audience page is told. `presenter` is whether the presenter's window is open right now: when it is not, the
+ * page keeps the last slide and says so. `slide` is null while the deck has nothing to show (or is gone) and while `blank`.
+ */
+export interface AudienceState {
+  presenter: boolean
+  blank: boolean
+  index: number
+  count: number
+  aspect: '16:9' | '4:3'
+  slide: AudienceSlide | null
+}
+
+/** A state, or the end of the link (a new one was made, or the presenter has been away too long). */
+export type AudienceEvent = ({ ended?: false } & AudienceState) | { ended: true; why: 'renewed' | 'over' }
 
 export interface Refusal {
   ok: false
