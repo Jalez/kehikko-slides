@@ -2,9 +2,11 @@ import { resolve } from 'node:path'
 
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { doors, serves } from 'kehikot-module-protocol/serve'
-import { defineConfig } from 'vite'
+import { beforeHandler, doors, serves } from 'kehikot-module-protocol/serve'
+import { defineConfig, type Plugin } from 'vite'
 
+import { audienceDoor } from './audience.ts'
+import { devDocument } from './audience-page.ts'
 import { BUILD, MANIFEST, TICKET, answer, stream } from './doors.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
 
@@ -24,10 +26,26 @@ import { ID, PREFERRED_PORT } from './manifest.ts'
  *   the length of a build.
  * - `base: './'`, because a host frames this at whatever address it wrote down.
  */
+/**
+ * The audience view's door (`audience.ts`), ahead of `doors()`: `/audience/<key>` is a page, a stream and a picture
+ * under a key, none of them the doors' to gate. Its page is the module's own, run through this dev server's transform.
+ */
+function audience(): Plugin {
+  return {
+    name: 'slides-audience',
+    apply: 'serve',
+    configureServer(server) {
+      const door = audienceDoor({ document: devDocument((url, html) => server.transformIndexHtml(url, html), 'Slides') })
+      server.middlewares.use(beforeHandler(door) as never)
+    },
+  }
+}
+
 export default defineConfig({
   base: './',
   plugins: [
     serves({ id: ID, prefer: PREFERRED_PORT }),
+    audience(),
     doors({ manifest: MANIFEST, answer, stream, build: BUILD, page: { title: 'Slides', ticket: TICKET }, pages: ['/print'] }),
     react(),
     tailwindcss(),

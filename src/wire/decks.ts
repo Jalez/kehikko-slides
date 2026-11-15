@@ -1,6 +1,7 @@
-import { answered, ask, follow, subscribe } from 'kehikot-module-protocol/client'
+import { answered, ask, follow, subscribe, ticket } from 'kehikot-module-protocol/client'
 
 import type {
+  AudienceLink,
   CitationsReply,
   CitationView,
   ConflictReply,
@@ -55,6 +56,14 @@ export interface Decks {
   followPointer(project: string, slug: string, onPoint: (state: PointerState) => void, presenting: boolean): () => void
   /** Tell the door what this page did with the pointing made at `at`, so its caller is told what happened. */
   pointed(project: string, slug: string, at: number, did: PointerSaid['did'], hidden: boolean): Promise<void>
+  /**
+   * The presenter's side of the audience view: calls `onLink` with the link to hand out (its path; the page adds its own
+   * origin) and how many windows follow it, at once and whenever either changes. The stream being open is what says the
+   * presenter is there, so the one that is open is the presenter's window. Returns the unsubscribe.
+   */
+  followAudience(project: string, slug: string, onLink: (link: AudienceLink) => void): () => void
+  /** Make a new link: the old one stops working. Every presenter window is handed the new one by `followAudience`. */
+  renewAudience(project: string, slug: string): Promise<AudienceLink>
   /** Every slide's sources, looked for in their files; indexed like the slides. */
   citations(project: string, slug: string): Promise<CitationView[][]>
   /**
@@ -133,6 +142,15 @@ export const decks: Decks = {
     return follow<PresentState>('./api/present', (state) => state && typeof state.index === 'number' && onState(state), {
       query: { project, slug },
     })
+  },
+  /* The ticket is in the address: an `EventSource` sends no header, and the link is a secret. */
+  followAudience(project, slug, onLink) {
+    return follow<AudienceLink>('./api/audience', (link) => link && typeof link.path === 'string' && onLink(link), {
+      query: { project, slug, ticket: ticket() },
+    })
+  },
+  async renewAudience(project, slug) {
+    return (await send<{ link: AudienceLink }>('POST', './api/audience', { project, slug })).link
   },
   followPointer(project, slug, onPoint, presenting) {
     return follow<PointerState>('./api/pointer', (state) => state && typeof state.index === 'number' && onPoint(state), {

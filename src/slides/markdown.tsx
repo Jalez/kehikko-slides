@@ -19,6 +19,12 @@ import { CITE_HREF, CiteMark } from './citations.tsx'
 export const PictureProject = createContext<string | null>(null)
 
 /**
+ * A slide drawn for somebody who is only watching (the audience view): where its pictures come from, which
+ * is a door of the link's own, and nothing on it is pressable — a link in a slide is its words. Null everywhere else.
+ */
+export const Watching = createContext<{ picture(path: string): string } | null>(null)
+
+/**
  * Where a picture a slide names is fetched from. A URL (`https:`, `data:`, an
  * absolute `/…`) is used as written; anything else is a path relative to the
  * project, served by this app's own `/api/asset` door. That door is behind the
@@ -72,7 +78,8 @@ export function knock(src: string): void {
 /** A picture on a slide, from the project when its path is relative to it. */
 function Picture({ src, ...rest }: ComponentProps<'img'>) {
   const project = useContext(PictureProject)
-  const from = typeof src === 'string' && isProjectPath(src) ? assetUrl(src, project) : src
+  const watching = useContext(Watching)
+  const from = typeof src === 'string' && isProjectPath(src) ? (watching ? watching.picture(src) : assetUrl(src, project)) : src
   /* Keyed by the address: whether it failed is a fact about that address, not about this place on the slide. */
   return <Fetched key={typeof from === 'string' ? from : ''} {...rest} src={from} written={typeof src === 'string' ? src : ''} />
 }
@@ -132,6 +139,8 @@ const COMPONENTS: Components = {
  */
 function SlideLink({ href, onClick, ...rest }: ComponentProps<'a'>) {
   const open = useContext(OpenAddressContext)
+  const watching = useContext(Watching)
+  if (watching) return <span>{rest.children}</span>
   return (
     <a
       {...rest}

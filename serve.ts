@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { run } from 'kehikot-module-protocol/run'
 
+import { audienceDoor, endAll } from './audience.ts'
+import { builtDocument } from './audience-page.ts'
 import { stopDigester } from './digest.ts'
 import { answer, BUILD, MANIFEST, stream, TICKET } from './doors.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
@@ -25,6 +27,11 @@ await run({
   build: BUILD,
   ticket: TICKET,
   pages: ['/print'],
+  /* `/audience/<key>`: the audience view, which is handed no ticket (`audience.ts`). */
+  before: audienceDoor({ document: builtDocument(import.meta.dirname, BUILD.commit) }),
   /* A digest still waiting for its quiet while is dropped; `list_proposals` keeps every decision. */
-  onStop: stopDigester,
+  onStop: () => {
+    endAll()
+    return stopDigester()
+  },
 })

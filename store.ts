@@ -274,6 +274,16 @@ function hidden(segments: string[], documents: string | null): boolean {
   return rest.some((one) => one.startsWith('.'))
 }
 
+/** What rides with every picture. `style-src` lets an SVG's own `<style>` colour it; nothing in it can load or run. */
+export const PICTURE_HEADERS: Record<string, string> = {
+  'cache-control': 'private, max-age=60',
+  'x-content-type-options': 'nosniff',
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  'cross-origin-resource-policy': 'same-origin',
+  /* An `<img>` takes no notice of this; an address opened on its own is saved rather than shown. */
+  'content-disposition': 'attachment',
+}
+
 /**
  * A picture in the project that a slide names, or null when it is not served.
  * The path is a deck's, and a deck can arrive with a cloned project, so it is a
