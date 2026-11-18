@@ -131,6 +131,11 @@ describe('the link', () => {
     expect(url).not.toContain('7990')
   })
 
+  test('a window with no origin to build on (null: a sandboxed frame, a blank document) shows the path instead of failing to draw', () => {
+    expect(audienceUrl('/audience/abc', 'null')).toBe('/audience/abc')
+    expect(audienceUrl('/audience/abc', 'about:blank')).toBe('/audience/abc')
+  })
+
   test('is the same for the same deck, and different keys for different decks and projects', () => {
     const a = project()
     const b = project()

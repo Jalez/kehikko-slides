@@ -18,7 +18,12 @@ import type { AudienceLink } from '../deck/api.ts'
 
 /** The address to hand out: the link's path on the origin this window was opened from. */
 export function audienceUrl(path: string, origin: string = location.origin): string {
-  return new URL(path, origin).href
+  /* A window with no origin to build on (an opaque `null` origin: a sandboxed frame, a page opened from a file, a test's blank document) shows the link's path rather than failing to draw the window. */
+  try {
+    return new URL(path, origin).href
+  } catch {
+    return path
+  }
 }
 
 export const WORDS = {
