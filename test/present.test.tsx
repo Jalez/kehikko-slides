@@ -356,7 +356,7 @@ describe('the talk on the wire', () => {
       globalThis.fetch = was
     }
     expect(sent).toHaveLength(1)
-    expect(sent[0]?.url).toBe('./api/present')
+    expect(sent[0]?.url).toBe('/api/present')
     expect(sent[0]?.init?.method).toBe('POST')
     expect(JSON.parse(String(sent[0]?.init?.body))).toEqual({ project: '/work/thesis', slug: 'defence', index: 3, blank: true })
     expect(Object.keys(sent[0]?.init?.headers ?? {})).toContain('x-module-ticket')
@@ -437,7 +437,7 @@ describe('windows of their own', () => {
 
   /* Pictures: every place a slide is drawn asks this app's own door, for the project that place was told. */
   const PICTURED = `${LINKED}\n---\n\n<!-- layout: image -->\n![a bridge](figures/bridge.png)\n`
-  const DOOR = './api/asset?project=%2Fwork%2Fthesis&path=figures%2Fbridge.png'
+  const DOOR = '/api/asset?project=%2Fwork%2Fthesis&path=figures%2Fbridge.png'
   const pictures = (within: ParentNode = document) => [...within.querySelectorAll('img')].map((img) => img.getAttribute('src'))
 
   test('a picture is fetched from the project on the strip, in the preview and on the stage', async () => {
