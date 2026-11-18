@@ -290,6 +290,8 @@ describe('the header the host draws', () => {
     draw(fakeDecks())
     await waitFor(() => expect(item<'go'>('slide')?.label).toBe('Go to slide'))
     await waitFor(() => expect(following().getAttribute('aria-label')).toBe('Following the paper'))
+    /* The slide list is declared once the deck has been read, a moment after the control itself: wait for it, never read it the moment the label shows. */
+    await waitFor(() => expect(item<'go'>('slide')?.options).toHaveLength(3))
     expect(wire.items.map((one) => `${one.kind} ${one.id}`)).toEqual([
       'switch mode',
       'toggle following',
