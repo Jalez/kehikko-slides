@@ -32,7 +32,7 @@ export const Watching = createContext<{ picture(path: string): string } | null>(
  */
 export function assetUrl(path: string, project: string | null = null, carried: string = ticket()): string {
   if (!project) return path
-  return `./api/asset?${new URLSearchParams(carried ? { project, path, ticket: carried } : { project, path })}`
+  return `/api/asset?${new URLSearchParams(carried ? { project, path, ticket: carried } : { project, path })}`
 }
 
 /** How long a picture that did not load is left alone before a newly drawn slide asks for it again. */
@@ -61,7 +61,7 @@ const KNOCK_AGAIN_DOWN_MS = 1_500
  * however many pictures a slide has.
  */
 export function knock(src: string): void {
-  if (!src.startsWith(`.${PATHS.asset}?`) || Date.now() - knockedAt < ASK_AGAIN_MS) return
+  if (!src.startsWith(`${PATHS.asset}?`) || Date.now() - knockedAt < ASK_AGAIN_MS) return
   knockedAt = Date.now()
   void ask(PATHS.asset, { query: { path: '' }, ticket: true }).then(
     (asked) => {

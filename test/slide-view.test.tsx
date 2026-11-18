@@ -52,13 +52,13 @@ describe('SlideView', () => {
       </PictureProject.Provider>,
     ).container
     expect([...view.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
-      './api/asset?project=%2Fwork%2Fthesis&path=figures%2Fbridge.png',
+      '/api/asset?project=%2Fwork%2Fthesis&path=figures%2Fbridge.png',
       'https://example.org/far.png',
     ])
   })
 
   test('the door’s address carries the page’s ticket, and no project leaves the path as written', () => {
-    expect(assetUrl('figures/a b.png', '/work/thesis', 'T1')).toBe('./api/asset?project=%2Fwork%2Fthesis&path=figures%2Fa+b.png&ticket=T1')
+    expect(assetUrl('figures/a b.png', '/work/thesis', 'T1')).toBe('/api/asset?project=%2Fwork%2Fthesis&path=figures%2Fa+b.png&ticket=T1')
     expect(assetUrl('figures/bridge.png', null, 'T1')).toBe('figures/bridge.png')
   })
 
